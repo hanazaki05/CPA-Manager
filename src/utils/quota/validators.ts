@@ -6,7 +6,7 @@ import type { AuthFileItem } from '@/types';
 import { GEMINI_CLI_IGNORED_MODEL_PREFIXES } from './constants';
 
 export function resolveAuthProvider(file: AuthFileItem): string {
-  const raw = file.provider ?? file.type ?? '';
+  const raw = file.provider ?? file.type ?? file.typo ?? '';
   return String(raw).trim().toLowerCase();
 }
 
@@ -52,9 +52,18 @@ export function isRuntimeOnlyAuthFile(file: AuthFileItem): boolean {
 
 export function isDisabledAuthFile(file: AuthFileItem): boolean {
   const raw = (file as { disabled?: unknown }).disabled;
+  const statusRaw = file.status ?? file.state;
+  const normalizedStatus =
+    typeof statusRaw === 'string' ? statusRaw.trim().toLowerCase() : '';
+  if (normalizedStatus === 'disabled' || normalizedStatus === 'inactive') {
+    return true;
+  }
   if (typeof raw === 'boolean') return raw;
   if (typeof raw === 'number') return raw !== 0;
-  if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true';
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
+  }
   return false;
 }
 
