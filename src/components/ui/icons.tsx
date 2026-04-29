@@ -448,6 +448,16 @@ export function IconSidebarUsage({ size = 20, ...props }: IconProps) {
   );
 }
 
+export function IconSidebarMonitor({ size = 20, ...props }: IconProps) {
+  return (
+    <svg {...sidebarSvgProps} width={size} height={size} {...props}>
+      <path d="M3 12h3l2.2-4.5 4.2 9 2.4-5h6.2" />
+      <path d="M4 19h16" />
+      <path d="M4 5h16" fill="currentColor" fillOpacity="0.08" />
+    </svg>
+  );
+}
+
 export function IconSidebarLogs({ size = 20, ...props }: IconProps) {
   return (
     <svg {...sidebarSvgProps} width={size} height={size} {...props}>
