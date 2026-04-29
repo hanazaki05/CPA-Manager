@@ -1,7 +1,7 @@
 import type { AxiosRequestConfig } from 'axios';
 import { authFilesApi } from '@/services/api/authFiles';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api/apiCall';
-import type { AuthFileItem, Config, CodexRateLimitInfo, CodexUsagePayload, CodexUsageWindow } from '@/types';
+import type { AuthFileItem, Config, CodexRateLimitInfo, CodexUsageWindow } from '@/types';
 import {
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
@@ -162,6 +162,8 @@ export interface CodexInspectionSession {
 }
 
 const QUOTA_BODY_PATTERNS = ['quota exhausted', 'limit reached', 'payment_required'];
+const FIVE_HOUR_WINDOW_SECONDS = 18000;
+const WEEK_WINDOW_SECONDS = 604800;
 
 export class CodexInspectionStoppedError extends Error {
   constructor(message: string = '巡检已停止') {
@@ -421,14 +423,45 @@ const runConcurrently = async <T, R>(
 const getWindowUsedPercent = (window?: CodexUsageWindow | null) =>
   normalizeNumberValue(window?.used_percent ?? window?.usedPercent);
 
+const getWindowSeconds = (window?: CodexUsageWindow | null) =>
+  normalizeNumberValue(window?.limit_window_seconds ?? window?.limitWindowSeconds);
+
 const getLimitWindows = (rateLimit?: CodexRateLimitInfo | null) => [
   rateLimit?.primary_window ?? rateLimit?.primaryWindow ?? null,
   rateLimit?.secondary_window ?? rateLimit?.secondaryWindow ?? null,
 ];
 
-const deriveUsedPercent = (payload: CodexUsagePayload | null): number | null => {
-  if (!payload) return null;
-  const rateLimit = payload.rate_limit ?? payload.rateLimit ?? null;
+const pickClassifiedWindows = (
+  rateLimit?: CodexRateLimitInfo | null
+): { fiveHourWindow: CodexUsageWindow | null; weeklyWindow: CodexUsageWindow | null } => {
+  const primaryWindow = rateLimit?.primary_window ?? rateLimit?.primaryWindow ?? null;
+  const secondaryWindow = rateLimit?.secondary_window ?? rateLimit?.secondaryWindow ?? null;
+  const rawWindows = [primaryWindow, secondaryWindow];
+
+  let fiveHourWindow: CodexUsageWindow | null = null;
+  let weeklyWindow: CodexUsageWindow | null = null;
+
+  rawWindows.forEach((window) => {
+    if (!window) return;
+    const seconds = getWindowSeconds(window);
+    if (seconds === FIVE_HOUR_WINDOW_SECONDS && !fiveHourWindow) {
+      fiveHourWindow = window;
+    } else if (seconds === WEEK_WINDOW_SECONDS && !weeklyWindow) {
+      weeklyWindow = window;
+    }
+  });
+
+  if (!fiveHourWindow) {
+    fiveHourWindow = primaryWindow && primaryWindow !== weeklyWindow ? primaryWindow : null;
+  }
+  if (!weeklyWindow) {
+    weeklyWindow = secondaryWindow && secondaryWindow !== fiveHourWindow ? secondaryWindow : null;
+  }
+
+  return { fiveHourWindow, weeklyWindow };
+};
+
+const deriveUsedPercent = (rateLimit?: CodexRateLimitInfo | null): number | null => {
   const values = getLimitWindows(rateLimit)
     .map((window) => getWindowUsedPercent(window))
     .filter((value): value is number => value !== null);
@@ -446,33 +479,140 @@ const isRateLimitReached = (rateLimit?: CodexRateLimitInfo | null) => {
   });
 };
 
-const resolveProbeAction = (
+type CodexInspectionDecision = Pick<
+  CodexInspectionResultItem,
+  'action' | 'actionReason' | 'usedPercent' | 'isQuota'
+>;
+
+const resolveLegacyProbeAction = (
   account: CodexInspectionAccount,
   statusCode: number,
   usedPercent: number | null,
   isQuota: boolean,
   threshold: number
-): Pick<CodexInspectionResultItem, 'action' | 'actionReason'> => {
+): CodexInspectionDecision => {
   const overThreshold = usedPercent !== null && usedPercent >= threshold;
   if (statusCode === 401) {
-    return { action: 'delete', actionReason: '接口返回 401，建议删除失效账号' };
+    return {
+      action: 'delete',
+      actionReason: '接口返回 401，建议删除失效账号',
+      usedPercent,
+      isQuota: false,
+    };
   }
   if (isQuota || overThreshold) {
     if (account.disabled) {
       return {
         action: 'keep',
         actionReason: overThreshold ? '额度超阈值，但账号已禁用' : '额度已耗尽，但账号已禁用',
+        usedPercent,
+        isQuota,
       };
     }
     return {
       action: 'disable',
       actionReason: overThreshold ? '额度超阈值，建议禁用账号' : '额度已耗尽，建议禁用账号',
+      usedPercent,
+      isQuota,
     };
   }
   if (statusCode === 200 && account.disabled) {
-    return { action: 'enable', actionReason: '账号恢复健康，建议重新启用' };
+    return {
+      action: 'enable',
+      actionReason: '账号恢复健康，建议重新启用',
+      usedPercent,
+      isQuota: false,
+    };
   }
-  return { action: 'keep', actionReason: '无需处理' };
+  return {
+    action: 'keep',
+    actionReason: '无需处理',
+    usedPercent,
+    isQuota: false,
+  };
+};
+
+const resolveWindowAwareProbeAction = (
+  account: CodexInspectionAccount,
+  statusCode: number,
+  rateLimit: CodexRateLimitInfo | null,
+  threshold: number
+): CodexInspectionDecision | null => {
+  if (!rateLimit) return null;
+
+  const { fiveHourWindow, weeklyWindow } = pickClassifiedWindows(rateLimit);
+  const weeklyUsedPercent = getWindowUsedPercent(weeklyWindow);
+  if (!weeklyWindow || weeklyUsedPercent === null) return null;
+
+  const fiveHourUsedPercent = getWindowUsedPercent(fiveHourWindow);
+  const weeklyOverThreshold = weeklyUsedPercent >= threshold;
+  const fiveHourOverThreshold = fiveHourUsedPercent !== null && fiveHourUsedPercent >= threshold;
+
+  if (statusCode === 401) {
+    return {
+      action: 'delete',
+      actionReason: '接口返回 401，建议删除失效账号',
+      usedPercent: weeklyUsedPercent,
+      isQuota: false,
+    };
+  }
+
+  if (weeklyOverThreshold) {
+    if (account.disabled) {
+      return {
+        action: 'keep',
+        actionReason: '周额度达到阈值，但账号已禁用',
+        usedPercent: weeklyUsedPercent,
+        isQuota: true,
+      };
+    }
+    return {
+      action: 'disable',
+      actionReason: '周额度达到阈值，建议禁用账号',
+      usedPercent: weeklyUsedPercent,
+      isQuota: true,
+    };
+  }
+
+  if (account.disabled) {
+    return {
+      action: 'enable',
+      actionReason: fiveHourOverThreshold
+        ? '5 小时额度达到阈值，但周额度仍可用，建议立即启用账号'
+        : '周额度仍可用，建议立即启用账号',
+      usedPercent: weeklyUsedPercent,
+      isQuota: false,
+    };
+  }
+
+  if (fiveHourOverThreshold) {
+    return {
+      action: 'keep',
+      actionReason: '5 小时额度达到阈值，但周额度仍可用，暂不禁用账号',
+      usedPercent: weeklyUsedPercent,
+      isQuota: false,
+    };
+  }
+
+  return {
+    action: 'keep',
+    actionReason: '周额度仍可用，无需处理',
+    usedPercent: weeklyUsedPercent,
+    isQuota: false,
+  };
+};
+
+const resolveProbeAction = (
+  account: CodexInspectionAccount,
+  statusCode: number,
+  rateLimit: CodexRateLimitInfo | null,
+  usedPercent: number | null,
+  isQuota: boolean,
+  threshold: number
+): CodexInspectionDecision => {
+  const windowAwareDecision = resolveWindowAwareProbeAction(account, statusCode, rateLimit, threshold);
+  if (windowAwareDecision) return windowAwareDecision;
+  return resolveLegacyProbeAction(account, statusCode, usedPercent, isQuota, threshold);
 };
 
 const inspectSingleAccount = async (
@@ -527,42 +667,44 @@ const inspectSingleAccount = async (
     }
 
     const payload = parseCodexUsagePayload(result.body ?? result.bodyText);
-    const usedPercent = deriveUsedPercent(payload);
+    const rateLimit = payload?.rate_limit ?? payload?.rateLimit ?? null;
+    const usedPercent = deriveUsedPercent(rateLimit);
     const bodyText = result.bodyText.toLowerCase();
     const isQuota =
       result.statusCode === 402 ||
       QUOTA_BODY_PATTERNS.some((pattern) => bodyText.includes(pattern)) ||
-      isRateLimitReached(payload?.rate_limit ?? payload?.rateLimit ?? null) ||
+      isRateLimitReached(rateLimit) ||
       (usedPercent !== null && usedPercent >= settings.usedPercentThreshold);
-    const action = resolveProbeAction(
+    const decision = resolveProbeAction(
       account,
       result.statusCode,
+      rateLimit,
       usedPercent,
       isQuota,
       settings.usedPercentThreshold
     );
 
     const successLevel =
-      action.action === 'delete'
+      decision.action === 'delete'
         ? 'error'
-        : action.action === 'disable'
+        : decision.action === 'disable'
           ? 'warning'
-          : action.action === 'enable'
+          : decision.action === 'enable'
             ? 'success'
             : 'info';
-    const percentText = usedPercent === null ? '--' : `${usedPercent.toFixed(1)}%`;
+    const percentText = decision.usedPercent === null ? '--' : `${decision.usedPercent.toFixed(1)}%`;
     onLog?.(
       successLevel,
-      `${account.displayAccount} -> ${action.action} (HTTP ${result.statusCode} · 已用 ${percentText})`
+      `${account.displayAccount} -> ${decision.action} (HTTP ${result.statusCode} · 已用 ${percentText})`
     );
 
     return {
       ...account,
-      action: action.action,
-      actionReason: action.actionReason,
+      action: decision.action,
+      actionReason: decision.actionReason,
       statusCode: result.statusCode,
-      usedPercent,
-      isQuota,
+      usedPercent: decision.usedPercent,
+      isQuota: decision.isQuota,
       error: '',
     };
   } catch (error) {
