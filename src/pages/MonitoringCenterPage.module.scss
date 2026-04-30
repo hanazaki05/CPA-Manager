@@ -20,6 +20,7 @@
 }
 
 .page {
+  container: monitoring-page / inline-size;
   display: grid;
   gap: 20px;
   min-width: 0;
@@ -455,6 +456,7 @@
 .summaryCard {
   display: grid;
   gap: 8px;
+  min-width: 0;
   min-height: 138px;
   padding: 18px;
   background: var(--monitor-surface-elevated);
@@ -484,9 +486,14 @@
 }
 
 .summaryValue {
-  font-size: clamp(26px, 2.4vw, 38px);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(24px, 2vw, 32px);
   line-height: 1;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .summaryMeta {
@@ -734,6 +741,8 @@
 }
 
 .tableWrapper {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -745,17 +754,17 @@
 }
 
 .accountOverviewTable {
-  --account-col-account: 18%;
-  --account-col-total-calls: 6%;
-  --account-col-success-calls: 7%;
-  --account-col-failure-calls: 7%;
+  --account-col-account: 17%;
+  --account-col-total-calls: 5%;
+  --account-col-success-calls: 6%;
+  --account-col-failure-calls: 6%;
   --account-col-total-tokens: 8%;
-  --account-col-input-tokens: 9%;
-  --account-col-output-tokens: 9%;
-  --account-col-cached-tokens: 9%;
-  --account-col-estimated-cost: 9%;
-  --account-col-latest-request: 11%;
-  --account-col-action: 7%;
+  --account-col-input-tokens: 8%;
+  --account-col-output-tokens: 8%;
+  --account-col-cached-tokens: 8%;
+  --account-col-estimated-cost: 8%;
+  --account-col-latest-request: 15%;
+  --account-col-action: 11%;
   --account-overview-columns:
     var(--account-col-account)
     var(--account-col-total-calls)
@@ -769,7 +778,7 @@
     var(--account-col-latest-request)
     var(--account-col-action);
 
-  min-width: 1280px;
+  min-width: 1440px;
   table-layout: fixed;
 }
 
@@ -815,6 +824,17 @@
 
 .accountOverviewTable col:nth-child(11) {
   width: var(--account-col-action);
+}
+
+.accountOverviewTable td:last-child {
+  min-width: 0;
+}
+
+.accountOverviewTable td:last-child .inlineActionButton {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .realtimeTable {
@@ -1277,13 +1297,13 @@
   }
 }
 
-@media (max-width: 1440px) {
+@container monitoring-page (max-width: 1440px) {
   .summaryGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 1240px) {
+@container monitoring-page (max-width: 1240px) {
   .masthead {
     grid-template-columns: 1fr;
   }
@@ -1312,7 +1332,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@container monitoring-page (max-width: 900px) {
   .filterGrid,
   .summaryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1330,7 +1350,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@container monitoring-page (max-width: 768px) {
   .masthead,
   .panel,
   .summaryCard {
@@ -1367,6 +1387,10 @@
     grid-template-columns: 1fr;
   }
 
+  .summaryValue {
+    font-size: clamp(22px, 7vw, 30px);
+  }
+
   .priceActionsBar {
     justify-content: stretch;
   }
@@ -1380,7 +1404,7 @@
   }
 
   .accountOverviewTable {
-    min-width: 1280px;
+    min-width: 1440px;
   }
 
   .realtimeTable {
