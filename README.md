@@ -219,6 +219,10 @@ Issues and PRs are welcome. Include:
 - Screenshots for UI changes
 - Verification notes such as `npm run lint` and `npm run type-check`
 
+## Thanks
+
+[Linux Do](https://linux.do/)
+
 ## License
 
 MIT
