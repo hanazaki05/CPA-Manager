@@ -80,7 +80,7 @@ docker run -d \
   --restart unless-stopped \
   -p 18317:18317 \
   -v cpa-usage-data:/data \
-  seakee/cpa-usage-service:latest
+  seakee/cpa-manager:latest
 ```
 
 打开：
@@ -97,14 +97,14 @@ http://<host>:18317/management.html
   - 远程 CPA：`https://your-cpa.example.com`
 - Management Key
 
-如果你的镜像发布在其他 DockerHub 命名空间，把 `seakee/cpa-usage-service:latest` 替换成实际镜像名。
+发布镜像支持 `linux/amd64` 和 `linux/arm64`。如果你的镜像发布在其他 DockerHub 命名空间，把 `seakee/cpa-manager:latest` 替换成实际镜像名。
 
 ### Docker Compose
 
 ```yaml
 services:
   cpa-usage-service:
-    image: seakee/cpa-usage-service:latest
+    image: seakee/cpa-manager:latest
     restart: unless-stopped
     ports:
       - "18317:18317"
@@ -132,7 +132,7 @@ docker run -d \
   --add-host=host.docker.internal:host-gateway \
   -p 18317:18317 \
   -v cpa-usage-data:/data \
-  seakee/cpa-usage-service:latest
+  seakee/cpa-manager:latest
 ```
 
 然后 CPA 地址填写 `http://host.docker.internal:8317`。
@@ -153,7 +153,7 @@ docker run -d \
      --restart unless-stopped \
      -p 18317:18317 \
      -v cpa-usage-data:/data \
-     seakee/cpa-usage-service:latest
+     seakee/cpa-manager:latest
    ```
 
 3. 在 CPA 面板进入：
@@ -272,13 +272,12 @@ go run ./cmd/cpa-usage-service
 - Vite 输出单文件 `dist/index.html`
 - 打 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`
 - 发布流程会上传 `dist/management.html` 到 GitHub Releases
-- 同一个 workflow 会构建 `Dockerfile.usage-service` 并推送到 DockerHub
+- 同一个 workflow 会构建 `Dockerfile.usage-service` 并推送 `seakee/cpa-manager`
+- Docker 镜像会发布 `linux/amd64` 和 `linux/arm64`
+- workflow 会把 `README.md` 同步到 DockerHub overview
 - 必需 GitHub secrets：
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
-- 可选 GitHub variable：
-  - `DOCKERHUB_IMAGE`，例如 `your-org/cpa-usage-service`
-- 如果未设置 `DOCKERHUB_IMAGE`，默认镜像名为 `<DOCKERHUB_USERNAME>/cpa-usage-service`
 
 ## 常见问题
 

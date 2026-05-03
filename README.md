@@ -80,7 +80,7 @@ docker run -d \
   --restart unless-stopped \
   -p 18317:18317 \
   -v cpa-usage-data:/data \
-  seakee/cpa-usage-service:latest
+  seakee/cpa-manager:latest
 ```
 
 Open:
@@ -97,14 +97,14 @@ Enter:
   - Remote CPA: `https://your-cpa.example.com`
 - Management Key
 
-If your image is published under another DockerHub namespace, replace `seakee/cpa-usage-service:latest`.
+The published image supports `linux/amd64` and `linux/arm64`. If your image is published under another DockerHub namespace, replace `seakee/cpa-manager:latest`.
 
 ### Docker Compose
 
 ```yaml
 services:
   cpa-usage-service:
-    image: seakee/cpa-usage-service:latest
+    image: seakee/cpa-manager:latest
     restart: unless-stopped
     ports:
       - "18317:18317"
@@ -132,7 +132,7 @@ docker run -d \
   --add-host=host.docker.internal:host-gateway \
   -p 18317:18317 \
   -v cpa-usage-data:/data \
-  seakee/cpa-usage-service:latest
+  seakee/cpa-manager:latest
 ```
 
 Then enter `http://host.docker.internal:8317` as the CPA URL.
@@ -153,7 +153,7 @@ Then enter `http://host.docker.internal:8317` as the CPA URL.
      --restart unless-stopped \
      -p 18317:18317 \
      -v cpa-usage-data:/data \
-     seakee/cpa-usage-service:latest
+     seakee/cpa-manager:latest
    ```
 
 3. In the CPA panel, go to:
@@ -270,13 +270,12 @@ go run ./cmd/cpa-usage-service
 - Vite builds a single-file `dist/index.html`.
 - Tagging `vX.Y.Z` triggers `.github/workflows/release.yml`.
 - The release workflow uploads `dist/management.html` to GitHub Releases.
-- The same workflow builds `Dockerfile.usage-service` and pushes to DockerHub.
+- The same workflow builds `Dockerfile.usage-service` and pushes `seakee/cpa-manager`.
+- The Docker image is published for `linux/amd64` and `linux/arm64`.
+- The workflow syncs `README.md` to the DockerHub overview.
 - Required GitHub secrets:
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
-- Optional GitHub variable:
-  - `DOCKERHUB_IMAGE`, for example `your-org/cpa-usage-service`
-- Without `DOCKERHUB_IMAGE`, the default image is `<DOCKERHUB_USERNAME>/cpa-usage-service`.
 
 ## Troubleshooting
 
