@@ -7,7 +7,12 @@ import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
-import { usageServiceApi } from '@/services/api/usageService';
+import {
+  LEGACY_USAGE_SERVICE_LAST_CPA_BASE_KEY,
+  USAGE_SERVICE_LAST_CPA_BASE_KEY,
+  isUsageServiceId,
+  usageServiceApi
+} from '@/services/api/usageService';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -117,7 +122,7 @@ export function LoginPage() {
         let detectedUsageService = false;
         try {
           const info = await usageServiceApi.getInfo(detectedBase);
-          detectedUsageService = info.service === 'cpa-usage-service';
+          detectedUsageService = isUsageServiceId(info.service);
           setUsageServiceMode(detectedUsageService);
         } catch {
           detectedUsageService = false;
@@ -132,7 +137,10 @@ export function LoginPage() {
             navigate(redirect, { replace: true });
           }, 1500);
         } else {
-          const lastCPAForUsageService = localStorage.getItem('cpa-usage-service:last-cpa-base') || '';
+          const lastCPAForUsageService =
+            localStorage.getItem(USAGE_SERVICE_LAST_CPA_BASE_KEY) ||
+            localStorage.getItem(LEGACY_USAGE_SERVICE_LAST_CPA_BASE_KEY) ||
+            '';
           setApiBase(
             detectedUsageService
               ? lastCPAForUsageService
@@ -175,7 +183,7 @@ export function LoginPage() {
           cpaBaseUrl: baseToUse,
           managementKey: managementKey.trim(),
         });
-        localStorage.setItem('cpa-usage-service:last-cpa-base', baseToUse);
+        localStorage.setItem(USAGE_SERVICE_LAST_CPA_BASE_KEY, baseToUse);
       }
       await login({
         apiBase: usageServiceMode ? detectedBase : baseToUse,

@@ -76,10 +76,10 @@ Use this when CPA still auto-downloads and serves the panel. Deploy Usage Servic
 
 ```bash
 docker run -d \
-  --name cpa-usage-service \
+  --name cpa-manager \
   --restart unless-stopped \
   -p 18317:18317 \
-  -v cpa-usage-data:/data \
+  -v cpa-manager-data:/data \
   seakee/cpa-manager:latest
 ```
 
@@ -103,16 +103,16 @@ The published image supports `linux/amd64` and `linux/arm64`. If your image is p
 
 ```yaml
 services:
-  cpa-usage-service:
+  cpa-manager:
     image: seakee/cpa-manager:latest
     restart: unless-stopped
     ports:
       - "18317:18317"
     volumes:
-      - cpa-usage-data:/data
+      - cpa-manager-data:/data
 
 volumes:
-  cpa-usage-data:
+  cpa-manager-data:
 ```
 
 Start:
@@ -127,11 +127,11 @@ If CPA runs directly on a Linux host and Usage Service runs in Docker, add a hos
 
 ```bash
 docker run -d \
-  --name cpa-usage-service \
+  --name cpa-manager \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   -p 18317:18317 \
-  -v cpa-usage-data:/data \
+  -v cpa-manager-data:/data \
   seakee/cpa-manager:latest
 ```
 
@@ -149,10 +149,10 @@ Then enter `http://host.docker.internal:8317` as the CPA URL.
 
    ```bash
    docker run -d \
-     --name cpa-usage-service \
+     --name cpa-manager \
      --restart unless-stopped \
      -p 18317:18317 \
-     -v cpa-usage-data:/data \
+     -v cpa-manager-data:/data \
      seakee/cpa-manager:latest
    ```
 
@@ -262,7 +262,7 @@ Usage Service:
 ```bash
 cd usage-service
 go test ./...
-go run ./cmd/cpa-usage-service
+go run ./cmd/cpa-manager
 ```
 
 ## Build and Release
