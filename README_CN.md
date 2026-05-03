@@ -76,10 +76,10 @@ Usage Service
 
 ```bash
 docker run -d \
-  --name cpa-usage-service \
+  --name cpa-manager \
   --restart unless-stopped \
   -p 18317:18317 \
-  -v cpa-usage-data:/data \
+  -v cpa-manager-data:/data \
   seakee/cpa-manager:latest
 ```
 
@@ -103,16 +103,16 @@ http://<host>:18317/management.html
 
 ```yaml
 services:
-  cpa-usage-service:
+  cpa-manager:
     image: seakee/cpa-manager:latest
     restart: unless-stopped
     ports:
       - "18317:18317"
     volumes:
-      - cpa-usage-data:/data
+      - cpa-manager-data:/data
 
 volumes:
-  cpa-usage-data:
+  cpa-manager-data:
 ```
 
 启动：
@@ -127,11 +127,11 @@ docker compose up -d
 
 ```bash
 docker run -d \
-  --name cpa-usage-service \
+  --name cpa-manager \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   -p 18317:18317 \
-  -v cpa-usage-data:/data \
+  -v cpa-manager-data:/data \
   seakee/cpa-manager:latest
 ```
 
@@ -149,10 +149,10 @@ docker run -d \
 
    ```bash
    docker run -d \
-     --name cpa-usage-service \
+     --name cpa-manager \
      --restart unless-stopped \
      -p 18317:18317 \
-     -v cpa-usage-data:/data \
+     -v cpa-manager-data:/data \
      seakee/cpa-manager:latest
    ```
 
@@ -264,7 +264,7 @@ Usage Service：
 ```bash
 cd usage-service
 go test ./...
-go run ./cmd/cpa-usage-service
+go run ./cmd/cpa-manager
 ```
 
 ## 构建与发布
