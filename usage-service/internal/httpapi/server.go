@@ -31,6 +31,8 @@ type Server struct {
 	startedAt int64
 }
 
+const serviceID = "cpa-manager"
+
 type setupRequest struct {
 	CPAUpstreamURL string `json:"cpaBaseUrl"`
 	ManagementKey  string `json:"managementKey"`
@@ -84,7 +86,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "cpa-usage-service"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": serviceID})
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +95,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":   "cpa-usage-service",
+		"service":   serviceID,
 		"mode":      "embedded",
 		"startedAt": s.startedAt,
 	})
@@ -115,7 +117,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := s.collector.Status()
 	status.DeadLetters = deadLetters
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":     "cpa-usage-service",
+		"service":     serviceID,
 		"dbPath":      s.cfg.DBPath,
 		"events":      events,
 		"deadLetters": deadLetters,

@@ -36,6 +36,13 @@ export interface UsageServiceSetupRequest {
 }
 
 const USAGE_SERVICE_TIMEOUT_MS = 15 * 1000;
+export const USAGE_SERVICE_ID = 'cpa-manager';
+export const LEGACY_USAGE_SERVICE_ID = 'cpa-usage-service';
+export const USAGE_SERVICE_LAST_CPA_BASE_KEY = 'cpa-manager:last-cpa-base';
+export const LEGACY_USAGE_SERVICE_LAST_CPA_BASE_KEY = 'cpa-usage-service:last-cpa-base';
+
+export const isUsageServiceId = (service?: string): boolean =>
+  service === USAGE_SERVICE_ID || service === LEGACY_USAGE_SERVICE_ID;
 
 export const normalizeUsageServiceBase = (input: string): string => normalizeApiBase(input);
 
