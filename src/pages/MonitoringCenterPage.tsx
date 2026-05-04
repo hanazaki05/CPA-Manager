@@ -30,7 +30,7 @@ import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
-import { useAuthStore, useConfigStore } from '@/stores';
+import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import type { AuthFileItem, CodexRateLimitInfo, CodexUsagePayload, CodexUsageWindow } from '@/types';
 import { maskSensitiveText } from '@/utils/format';
 import {
@@ -842,6 +842,7 @@ export function MonitoringCenterPage() {
   const { t, i18n } = useTranslation();
   const config = useConfigStore((state) => state.config);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  const showNotification = useNotificationStore((state) => state.showNotification);
   const [timeRange, setTimeRange] = useState<MonitoringTimeRange>('today');
   const [searchInput, setSearchInput] = useState('');
   const [autoRefreshMs, setAutoRefreshMs] = useState('5000');
@@ -853,6 +854,7 @@ export function MonitoringCenterPage() {
   const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({});
   const [focusedAccount, setFocusedAccount] = useState<string | null>(null);
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+  const [syncingPrices, setSyncingPrices] = useState(false);
   const [priceModel, setPriceModel] = useState('');
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(() => createPriceDraft());
   const [accountQuotaStates, setAccountQuotaStates] = useState<Record<string, AccountQuotaState>>({});
@@ -869,6 +871,7 @@ export function MonitoringCenterPage() {
     lastRefreshedAt,
     modelPrices,
     setModelPrices,
+    syncModelPrices,
     loadUsage,
   } = useUsageData();
 
@@ -958,15 +961,20 @@ export function MonitoringCenterPage() {
     [t]
   );
 
+  const syncPriceModels = useMemo(
+    () =>
+      Array.from(new Set([...filteredRows.map((row) => row.model), ...Object.keys(modelPrices)]))
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [filteredRows, modelPrices]
+  );
+
   const priceModelOptions = useMemo(
     () => [
       { value: '', label: t('usage_stats.model_price_select_placeholder') },
-      ...Array.from(new Set([...filteredRows.map((row) => row.model), ...Object.keys(modelPrices)]))
-        .filter(Boolean)
-        .sort((left, right) => left.localeCompare(right))
-        .map((value) => ({ value, label: value })),
+      ...syncPriceModels.map((value) => ({ value, label: value })),
     ],
-    [filteredRows, modelPrices, t]
+    [syncPriceModels, t]
   );
 
   const authFilesByAuthIndex = useMemo(() => {
@@ -1327,7 +1335,7 @@ export function MonitoringCenterPage() {
     setPriceDraft(createPriceDraft());
   }, []);
 
-  const handleSavePrice = useCallback(() => {
+  const handleSavePrice = useCallback(async () => {
     if (!priceModel) {
       return;
     }
@@ -1336,7 +1344,7 @@ export function MonitoringCenterPage() {
     const completion = parsePriceValue(priceDraft.completion);
     const cache = priceDraft.cache.trim() === '' ? prompt : parsePriceValue(priceDraft.cache);
 
-    setModelPrices({
+    await setModelPrices({
       ...modelPrices,
       [priceModel]: {
         prompt,
@@ -1344,13 +1352,23 @@ export function MonitoringCenterPage() {
         cache,
       },
     });
-  }, [modelPrices, priceDraft.cache, priceDraft.completion, priceDraft.prompt, priceModel, setModelPrices]);
+    showNotification(t('usage_stats.model_price_saved'), 'success');
+  }, [
+    modelPrices,
+    priceDraft.cache,
+    priceDraft.completion,
+    priceDraft.prompt,
+    priceModel,
+    setModelPrices,
+    showNotification,
+    t,
+  ]);
 
   const handleDeletePrice = useCallback(
-    (model: string) => {
+    async (model: string) => {
       const nextPrices = { ...modelPrices };
       delete nextPrices[model];
-      setModelPrices(nextPrices);
+      await setModelPrices(nextPrices);
 
       if (priceModel === model) {
         resetPriceEditor();
@@ -1358,6 +1376,33 @@ export function MonitoringCenterPage() {
     },
     [modelPrices, priceModel, resetPriceEditor, setModelPrices]
   );
+
+  const handleSyncModelPrices = useCallback(async () => {
+    if (syncPriceModels.length === 0) {
+      showNotification(t('usage_stats.model_price_sync_no_models'), 'warning');
+      return;
+    }
+    setSyncingPrices(true);
+    try {
+      const result = await syncModelPrices(syncPriceModels);
+      showNotification(
+        t('usage_stats.model_price_sync_success', {
+          count: result.imported,
+          source: result.source || 'LiteLLM',
+        }),
+        'success'
+      );
+    } catch (error: unknown) {
+      const rawMessage = error instanceof Error ? error.message : String(error || t('common.unknown_error'));
+      const message =
+        rawMessage === 'model_price_sync_requires_usage_service'
+          ? t('usage_stats.model_price_sync_requires_usage_service')
+          : rawMessage;
+      showNotification(`${t('usage_stats.model_price_sync_failed')}: ${message}`, 'error');
+    } finally {
+      setSyncingPrices(false);
+    }
+  }, [showNotification, syncModelPrices, syncPriceModels, t]);
 
   return (
     <div className={styles.page}>
@@ -1804,6 +1849,14 @@ export function MonitoringCenterPage() {
           </div>
 
           <div className={styles.priceActionsBar}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncModelPrices}
+              loading={syncingPrices}
+            >
+              {t('usage_stats.model_price_sync')}
+            </Button>
             <Button variant="secondary" size="sm" onClick={resetPriceEditor}>
               {t('common.cancel')}
             </Button>

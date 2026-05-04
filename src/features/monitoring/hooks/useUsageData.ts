@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/services/api/client';
-import { usageServiceApi } from '@/services/api/usageService';
+import {
+  isUsageServiceId,
+  normalizeUsageServiceBase,
+  usageServiceApi,
+  type ModelPricesResponse,
+  type ModelPriceSyncResponse,
+} from '@/services/api/usageService';
 import { useAuthStore, useUsageServiceStore } from '@/stores';
-import { loadModelPrices, saveModelPrices, type ModelPrice } from '@/utils/usage';
+import { detectApiBaseFromLocation } from '@/utils/connection';
+import { clearModelPrices, loadModelPrices, saveModelPrices, type ModelPrice } from '@/utils/usage';
 
 export interface UsagePayload {
   total_requests?: number;
@@ -19,11 +26,13 @@ export interface UseUsageDataReturn {
   error: string;
   lastRefreshedAt: Date | null;
   modelPrices: Record<string, ModelPrice>;
-  setModelPrices: (prices: Record<string, ModelPrice>) => void;
+  setModelPrices: (prices: Record<string, ModelPrice>) => Promise<void>;
+  syncModelPrices: (models?: string[]) => Promise<ModelPriceSyncResponse>;
   loadUsage: () => Promise<void>;
 }
 
 export function useUsageData(): UseUsageDataReturn {
+  const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
   const usageServiceEnabled = useUsageServiceStore((state) => state.enabled);
   const usageServiceBase = useUsageServiceStore((state) => state.serviceBase);
@@ -33,6 +42,82 @@ export function useUsageData(): UseUsageDataReturn {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [modelPrices, setModelPricesState] = useState<Record<string, ModelPrice>>({});
   const requestIdRef = useRef(0);
+
+  const resolveModelPriceServiceBase = useCallback(async (): Promise<string> => {
+    if (usageServiceEnabled && usageServiceBase) {
+      return usageServiceBase;
+    }
+
+    const candidates = Array.from(
+      new Set(
+        [apiBase, detectApiBaseFromLocation()]
+          .map((value) => normalizeUsageServiceBase(value || ''))
+          .filter(Boolean)
+      )
+    );
+
+    for (const candidate of candidates) {
+      try {
+        const info = await usageServiceApi.getInfo(candidate);
+        if (isUsageServiceId(info.service)) {
+          return candidate;
+        }
+      } catch {
+        // The regular CPA management API does not expose Usage Service metadata.
+      }
+    }
+
+    return '';
+  }, [apiBase, usageServiceBase, usageServiceEnabled]);
+
+  const getModelPricesFromApi = useCallback(async (): Promise<ModelPricesResponse> => {
+    const serviceBase = await resolveModelPriceServiceBase();
+    if (!serviceBase) {
+      return { prices: {} };
+    }
+    return usageServiceApi.getModelPrices(serviceBase, managementKey);
+  }, [managementKey, resolveModelPriceServiceBase]);
+
+  const saveModelPricesToApi = useCallback(
+    async (prices: Record<string, ModelPrice>): Promise<ModelPricesResponse> => {
+      const serviceBase = await resolveModelPriceServiceBase();
+      if (!serviceBase) {
+        throw new Error('model_price_api_unavailable');
+      }
+      return usageServiceApi.saveModelPrices(serviceBase, prices, managementKey);
+    },
+    [managementKey, resolveModelPriceServiceBase]
+  );
+
+  const syncModelPricesFromApi = useCallback(async (models?: string[]): Promise<ModelPriceSyncResponse> => {
+    const serviceBase = await resolveModelPriceServiceBase();
+    if (!serviceBase) {
+      throw new Error('model_price_sync_requires_usage_service');
+    }
+    return usageServiceApi.syncModelPrices(serviceBase, managementKey, models);
+  }, [managementKey, resolveModelPriceServiceBase]);
+
+  const loadModelPricesFromStorage = useCallback(async () => {
+    const fallbackPrices = loadModelPrices();
+    try {
+      const response = await getModelPricesFromApi();
+      const apiPrices = response.prices ?? {};
+      if (Object.keys(apiPrices).length > 0) {
+        setModelPricesState(apiPrices);
+        clearModelPrices();
+        return;
+      }
+      if (Object.keys(fallbackPrices).length > 0) {
+        const migrated = await saveModelPricesToApi(fallbackPrices);
+        setModelPricesState(migrated.prices ?? fallbackPrices);
+        clearModelPrices();
+        return;
+      }
+      setModelPricesState({});
+    } catch {
+      setModelPricesState(fallbackPrices);
+    }
+  }, [getModelPricesFromApi, saveModelPricesToApi]);
 
   const loadUsage = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
@@ -59,14 +144,27 @@ export function useUsageData(): UseUsageDataReturn {
   }, [managementKey, usageServiceBase, usageServiceEnabled]);
 
   useEffect(() => {
-    setModelPricesState(loadModelPrices());
+    void loadModelPricesFromStorage();
     void loadUsage();
-  }, [loadUsage]);
+  }, [loadModelPricesFromStorage, loadUsage]);
 
-  const setModelPrices = useCallback((prices: Record<string, ModelPrice>) => {
+  const setModelPrices = useCallback(async (prices: Record<string, ModelPrice>) => {
     setModelPricesState(prices);
-    saveModelPrices(prices);
-  }, []);
+    try {
+      const response = await saveModelPricesToApi(prices);
+      setModelPricesState(response.prices ?? prices);
+      clearModelPrices();
+    } catch {
+      saveModelPrices(prices);
+    }
+  }, [saveModelPricesToApi]);
+
+  const syncModelPrices = useCallback(async (models?: string[]) => {
+    const response = await syncModelPricesFromApi(models);
+    setModelPricesState(response.prices ?? {});
+    clearModelPrices();
+    return response;
+  }, [syncModelPricesFromApi]);
 
   return {
     usage,
@@ -75,6 +173,7 @@ export function useUsageData(): UseUsageDataReturn {
     lastRefreshedAt,
     modelPrices,
     setModelPrices,
+    syncModelPrices,
     loadUsage,
   };
 }
