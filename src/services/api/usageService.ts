@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { UsagePayload } from '@/features/monitoring/hooks/useUsageData';
 import { normalizeApiBase } from '@/utils/connection';
+import type { ModelPrice } from '@/utils/usage';
 
 export interface UsageServiceInfo {
   service?: string;
@@ -33,6 +34,16 @@ export interface UsageServiceSetupRequest {
   managementKey: string;
   queue?: string;
   popSide?: string;
+}
+
+export interface ModelPricesResponse {
+  prices: Record<string, ModelPrice>;
+}
+
+export interface ModelPriceSyncResponse extends ModelPricesResponse {
+  source?: string;
+  imported: number;
+  skipped: number;
 }
 
 const USAGE_SERVICE_TIMEOUT_MS = 15 * 1000;
@@ -81,6 +92,52 @@ export const usageServiceApi = {
       timeout: USAGE_SERVICE_TIMEOUT_MS,
       headers: authHeaders(managementKey),
     });
+    return response.data;
+  },
+
+  getModelPrices: async (
+    base: string,
+    managementKey?: string
+  ): Promise<ModelPricesResponse> => {
+    const response = await axios.get<ModelPricesResponse>(
+      buildUrl(base, '/v0/management/model-prices'),
+      {
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+        headers: authHeaders(managementKey),
+      }
+    );
+    return response.data;
+  },
+
+  saveModelPrices: async (
+    base: string,
+    prices: Record<string, ModelPrice>,
+    managementKey?: string
+  ): Promise<ModelPricesResponse> => {
+    const response = await axios.put<ModelPricesResponse>(
+      buildUrl(base, '/v0/management/model-prices'),
+      { prices },
+      {
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+        headers: authHeaders(managementKey),
+      }
+    );
+    return response.data;
+  },
+
+  syncModelPrices: async (
+    base: string,
+    managementKey?: string,
+    models?: string[]
+  ): Promise<ModelPriceSyncResponse> => {
+    const response = await axios.post<ModelPriceSyncResponse>(
+      buildUrl(base, '/v0/management/model-prices/sync'),
+      models ? { models } : {},
+      {
+        timeout: 30 * 1000,
+        headers: authHeaders(managementKey),
+      }
+    );
     return response.data;
   },
 };

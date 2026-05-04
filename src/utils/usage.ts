@@ -389,6 +389,15 @@ export function saveModelPrices(prices: Record<string, ModelPrice>): void {
   }
 }
 
+export function clearModelPrices(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(MODEL_PRICE_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures; pricing is optional fallback data.
+  }
+}
+
 export function formatCompactNumber(value: number): string {
   const num = Number(value);
   if (!Number.isFinite(num)) return '0';
