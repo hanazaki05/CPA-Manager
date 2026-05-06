@@ -1067,7 +1067,7 @@
     "range_14d": "14д",
     "range_30d": "30д",
     "range_all": "Все",
-    "search_placeholder": "Поиск по модели, каналу, источнику, credential или endpoint",
+    "search_placeholder": "Поиск по аккаунту, метке, auth index, модели, каналу, источнику, credential или endpoint",
     "auto_refresh": "Автообновление",
     "auto_refresh_off": "Выкл",
     "auto_refresh_5s": "5с",
@@ -1315,7 +1315,12 @@
     "no_filtered_data": "Текущий поисковый фильтр ничего не нашёл.",
     "source": "Источник",
     "calls": "Вызовы",
-    "log_rows": "Log Rows"
+    "log_rows": "Log Rows",
+    "pagination_prev": "Назад",
+    "pagination_next": "Вперёд",
+    "pagination_info": "Страница {{current}} / {{total}} · Показано {{start}}-{{end}} / {{count}}",
+    "page_size_label": "На странице",
+    "page_size_option": "{{count}} / стр."
   },
   "logs": {
     "title": "Просмотр журналов",
