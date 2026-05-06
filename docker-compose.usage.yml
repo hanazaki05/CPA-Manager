@@ -10,6 +10,7 @@ services:
     environment:
       HTTP_ADDR: "0.0.0.0:18317"
       USAGE_DB_PATH: "/data/usage.sqlite"
+      USAGE_COLLECTOR_MODE: "auto"
       USAGE_RESP_QUEUE: "usage"
       USAGE_RESP_POP_SIDE: "right"
       USAGE_BATCH_SIZE: "100"
