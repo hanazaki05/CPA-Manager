@@ -13,6 +13,7 @@ type Config struct {
 	DBPath         string
 	CPAUpstreamURL string
 	ManagementKey  string
+	CollectorMode  string
 	Queue          string
 	PopSide        string
 	BatchSize      int
@@ -30,6 +31,7 @@ func Load() Config {
 		DBPath:         env("USAGE_DB_PATH", filepath.Join(dataDir, "usage.sqlite")),
 		CPAUpstreamURL: env("CPA_UPSTREAM_URL", ""),
 		ManagementKey:  readSecret("CPA_MANAGEMENT_KEY", "CPA_MANAGEMENT_KEY_FILE", "/run/secrets/cpa_management_key"),
+		CollectorMode:  normalizeCollectorMode(env("USAGE_COLLECTOR_MODE", "auto")),
 		Queue:          env("USAGE_RESP_QUEUE", "usage"),
 		PopSide:        env("USAGE_RESP_POP_SIDE", "right"),
 		BatchSize:      envInt("USAGE_BATCH_SIZE", 100),
@@ -38,6 +40,15 @@ func Load() Config {
 		PanelPath:      env("PANEL_PATH", ""),
 		CORSOrigins:    splitCSV(env("USAGE_CORS_ORIGINS", "*")),
 		TLSSkipVerify:  envBool("USAGE_RESP_TLS_SKIP_VERIFY", false),
+	}
+}
+
+func normalizeCollectorMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "http", "resp":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "auto"
 	}
 }
 
