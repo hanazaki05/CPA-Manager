@@ -4,11 +4,11 @@
 
 这是面向 **CLI Proxy API（CPA）** 的单文件 Web 管理面板，并提供可选的 **Usage Service** 用于持久化请求统计。
 
-CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/import` 端点。当前方案通过常驻服务消费 CPA 的用量队列，把请求级事件写入 SQLite，并向面板提供兼容 `/usage` 的查询接口。
+CPA 自 v6.10.0 起不再内置用量统计。当前方案通过常驻 Usage Service 消费 CPA 的用量队列，把请求级事件写入 SQLite，并向面板提供兼容的用量查询接口。
 
 - **主项目**: https://github.com/router-for-me/CLIProxyAPI
 - **示例地址**: https://remote.router-for.me/
-- **推荐 CPA 版本**: >= v6.10.8+
+- **推荐 CPA 版本**: >= v6.10.8
 
 ## 提供什么
 
@@ -17,14 +17,14 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
 - 两种部署模式：
   - **完整 Docker 方案**：访问 Usage Service 内置面板，登录时只填写 CPA 地址和 Management Key
   - **CPA 控制面板方案**：继续使用 CPA 的 `/management.html`，然后在面板中配置单独部署的 Usage Service 地址
-- 运行时监控、账号/模型/渠道拆解、费用估算、导入导出、认证文件管理、配额视图、日志、配置编辑和系统工具
+- 运行时监控、账号/模型/渠道拆解、模型价格、Token 费用估算、导入导出、认证文件管理、配额视图、日志、配置编辑和系统工具
 
 ## 选择部署模式
 
 | 模式 | 入口地址 | 用户需要配置 | 适用场景 |
 |---|---|---|---|
 | 完整 Docker 方案 | `http://<host>:18317/management.html` | 登录时填写 CPA 地址 + Management Key | 新部署、单入口、最少浏览器/CORS 问题 |
-| CPA 控制面板方案 | `http://<cpa-host>:8317/management.html` | 在「系统信息 -> 外部用量统计服务」配置 Usage Service 地址 | 保留 CPA 自动载入面板的现有习惯 |
+| CPA 控制面板方案 | `http://<cpa-host>:8317/management.html` | 在「中心信息 -> 外部用量统计服务」配置 Usage Service 地址 | 保留 CPA 自动载入面板的现有习惯 |
 | 前端开发方案 | Vite dev server 或 `dist/index.html` | CPA 地址，可选 Usage Service 地址 | 本地开发 |
 
 完整 Docker 方案不内置 CPA 本体。CPA 仍然作为上游服务独立运行；Docker 镜像提供 Usage Service 和内置管理面板。
@@ -36,7 +36,7 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
 - CPA 必须启用 Management，因为用量队列与 `/v0/management` 使用相同的可用性条件和 Management Key。
 - 在 CPA 中启用用量发布：配置 `usage-statistics-enabled: true`，或通过 `PUT /usage-statistics-enabled` 提交 `{ "value": true }`。
 - CPA `v6.10.8+` 推荐使用 HTTP 用量队列接口 `/v0/management/usage-queue`，可通过普通 HTTP 反代访问。
-- 旧版 CPA 会自动回退到 Redis RESP 队列；RESP 监听在 CPA API 端口，通常是 `8317`，不能通过普通 HTTP 反代转发。
+- 旧版 CPA 使用 RESP 队列协议。Usage Service 在 `auto` 模式下，如果 HTTP 队列接口不可用，会回退到 RESP。RESP 监听在 CPA API 端口，通常是 `8317`，不能通过普通 HTTP 反代转发。
 - CPA 在内存中保留队列项的时间由 `redis-usage-queue-retention-seconds` 控制，默认 `60` 秒，最大 `3600` 秒。Usage Service 应保持常驻运行。
 - 同一个 CPA 实例只应有一个 Usage Service 消费用量队列。
 
@@ -48,13 +48,13 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
 浏览器
   -> Usage Service :18317
       -> 内置 management.html
-      -> /v0/management/usage 从 SQLite 返回
+      -> /v0/management/usage 和 /v0/management/model-prices 从 SQLite 返回
       -> 其他 /v0/management/* 反代到 CPA
       -> HTTP/RESP 消费器 -> CPA API 端口
       -> SQLite /data/usage.sqlite
 ```
 
-登录页会识别当前由 Usage Service 托管。你填写 CPA 地址和 Management Key 后，Usage Service 会验证 CPA Management API，保存设置到 SQLite，启动 RESP 采集器，并从同源提供完整管理面板。
+登录页会识别当前由 Usage Service 托管。你填写 CPA 地址和 Management Key 后，Usage Service 会验证 CPA Management API，保存设置到 SQLite，按配置的采集模式启动采集器（默认 `auto`：优先 HTTP 队列，旧版回退 RESP），并从同源提供完整管理面板。
 
 ### CPA 控制面板方案
 
@@ -69,11 +69,11 @@ Usage Service
   -> SQLite /data/usage.sqlite
 ```
 
-当你希望保留 CPA 自动下载并托管面板的机制时，使用这个方案。单独部署 Usage Service，然后在「系统信息 -> 外部用量统计服务」中启用并填写地址。
+当你希望保留 CPA 自动下载并托管面板的机制时，使用这个方案。单独部署 Usage Service，然后在「中心信息 -> 外部用量统计服务」中启用并填写地址。
 
 ## 快速开始：完整 Docker 方案
 
-### DockerHub 镜像
+### Docker Hub 镜像
 
 ```bash
 docker run -d \
@@ -98,7 +98,7 @@ http://<host>:18317/management.html
   - 远程 CPA：`https://your-cpa.example.com`
 - Management Key
 
-发布镜像支持 `linux/amd64` 和 `linux/arm64`。如果你的镜像发布在其他 DockerHub 命名空间，把 `seakee/cpa-manager:latest` 替换成实际镜像名。
+发布镜像支持 `linux/amd64` 和 `linux/arm64`。如果你的镜像发布在其他 Docker Hub 命名空间，把 `seakee/cpa-manager:latest` 替换成实际镜像名。
 
 ### Docker Compose
 
@@ -160,7 +160,7 @@ docker run -d \
 3. 在 CPA 面板进入：
 
    ```text
-   系统信息 -> 外部用量统计服务
+   中心信息 -> 外部用量统计服务
    ```
 
 4. 启用并填写：
@@ -225,9 +225,13 @@ docker compose -f docker-compose.usage.yml up --build
 | `GET /v0/management/usage` | 面板兼容用量数据 |
 | `GET /v0/management/usage/export` | JSONL 导出用量事件 |
 | `POST /v0/management/usage/import` | JSONL 导入用量事件 |
+| `GET /v0/management/model-prices` | 读取 SQLite 中保存的模型价格 |
+| `PUT /v0/management/model-prices` | 替换已保存的模型价格 |
+| `POST /v0/management/model-prices/sync` | 从 LiteLLM 价格元数据同步模型价格 |
+| `GET /models`、`GET /v1/models` | setup 后将模型列表请求反代到 CPA |
 | `/v0/management/*` | 除 usage 外反代到 CPA |
 
-setup 后，用量和反代接口需要使用同一个 Management Key 作为 Bearer token。
+setup 后，`/status`、用量、模型价格和 `/v0/management/*` 反代接口需要使用同一个 Management Key 作为 Bearer token。
 
 ## 功能概览
 
@@ -236,10 +240,10 @@ setup 后，用量和反代接口需要使用同一个 Management Key 作为 Bea
 - **AI 提供商**：Gemini、Codex、Claude、Vertex、OpenAI 兼容渠道、Ampcode
 - **认证文件**：上传、下载、删除、状态、OAuth 排除模型、模型别名
 - **配额管理**：支持提供商的配额视图
-- **请求监控**：持久化用量 KPI、模型/渠道/账号拆解、失败分析、实时表格
+- **请求监控**：持久化用量 KPI、模型/渠道/账号拆解、模型价格、Token 费用估算、失败分析、实时表格
 - **Codex 账号巡检**：批量探测 Codex 认证池并给出清理建议
 - **日志**：增量读取和筛选文件日志
-- **系统信息**：模型列表、版本检查、本地状态工具、外部 Usage Service 配置
+- **中心信息**：模型列表、版本检查、本地状态工具、外部 Usage Service 配置
 
 ## 功能截图
 
@@ -276,7 +280,7 @@ go run ./cmd/cpa-manager
 - 发布流程会上传 `dist/management.html` 到 GitHub Releases
 - 同一个 workflow 会构建 `Dockerfile.usage-service` 并推送 `seakee/cpa-manager`
 - Docker 镜像会发布 `linux/amd64` 和 `linux/arm64`
-- workflow 会把 `README.md` 同步到 DockerHub overview
+- workflow 会把 `README.md` 同步到 Docker Hub overview
 - 必需 GitHub secrets：
   - `DOCKERHUB_USERNAME`
   - `DOCKERHUB_TOKEN`
@@ -284,7 +288,7 @@ go run ./cmd/cpa-manager
 ## 常见问题
 
 - **完整 Docker 方案无法连接 CPA**：确认容器内能访问 CPA 地址。Linux 宿主机 CPA 需要 `--add-host=host.docker.internal:host-gateway`。
-- **监控页为空**：确认 CPA 已启用使用统计，检查 Usage Service `/status`，并确认只有一个消费者。
+- **监控页为空**：确认 CPA 已启用用量发布，检查 Usage Service `/status`，并确认只有一个消费者。
 - **`unsupported RESP prefix 'H'`**：升级 CPA 到 `v6.10.8+` 后保持默认 `USAGE_COLLECTOR_MODE=auto`，Usage Service 会优先使用 HTTP 用量队列；旧版 CPA 或强制 RESP 时，CPA 地址必须是容器/主机内能直连 `8317` 的地址，不能是普通 HTTP 反代域名。
 - **Usage Service 返回 401**：使用 setup 时保存的同一个 Management Key。
 - **Docker 面板数据不更新**：检查 `/status` 中的 `lastConsumedAt`、`lastInsertedAt`、`lastError`。
