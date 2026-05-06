@@ -1627,6 +1627,9 @@
     "status_failed": "Usage Service 状态检查失败",
     "disabled_saved": "外部 Usage Service 已停用",
     "collector": "采集器",
+    "mode": "采集模式",
+    "transport": "传输协议",
+    "queue": "队列",
     "events": "事件数",
     "last_consumed": "最后消费",
     "last_error": "最后错误"

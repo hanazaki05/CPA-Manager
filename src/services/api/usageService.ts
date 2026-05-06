@@ -12,6 +12,8 @@ export interface UsageServiceInfo {
 export interface UsageServiceCollectorStatus {
   collector?: string;
   upstream?: string;
+  mode?: string;
+  transport?: string;
   queue?: string;
   lastConsumedAt?: number;
   lastInsertedAt?: number;
