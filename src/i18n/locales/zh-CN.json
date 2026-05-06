@@ -1076,7 +1076,7 @@
     "range_14d": "14 天",
     "range_30d": "30 天",
     "range_all": "全部",
-    "search_placeholder": "搜索模型、渠道、来源、凭证、接口路径",
+    "search_placeholder": "搜索账号、标签、认证索引、模型、渠道、来源、凭证、接口路径",
     "auto_refresh": "自动刷新",
     "auto_refresh_off": "关闭",
     "auto_refresh_5s": "5 秒",
@@ -1324,7 +1324,12 @@
     "no_filtered_data": "没有匹配当前搜索条件的调用数据。",
     "source": "来源",
     "calls": "调用数",
-    "log_rows": "日志行"
+    "log_rows": "日志行",
+    "pagination_prev": "上一页",
+    "pagination_next": "下一页",
+    "pagination_info": "第 {{current}} / {{total}} 页 · 显示 {{start}}-{{end}} / {{count}}",
+    "page_size_label": "每页",
+    "page_size_option": "{{count}} 条/页"
   },
   "logs": {
     "title": "日志查看",

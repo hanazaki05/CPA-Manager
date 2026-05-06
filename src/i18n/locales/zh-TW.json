@@ -1096,7 +1096,7 @@
     "range_14d": "14 天",
     "range_30d": "30 天",
     "range_all": "全部",
-    "search_placeholder": "搜尋模型、渠道、來源、憑證、介面路徑",
+    "search_placeholder": "搜尋帳號、標籤、認證索引、模型、渠道、來源、憑證、介面路徑",
     "auto_refresh": "自動刷新",
     "auto_refresh_off": "關閉",
     "auto_refresh_5s": "5 秒",
@@ -1344,7 +1344,12 @@
     "no_filtered_data": "沒有匹配目前搜尋條件的呼叫資料。",
     "source": "來源",
     "calls": "呼叫數",
-    "log_rows": "日誌行"
+    "log_rows": "日誌行",
+    "pagination_prev": "上一頁",
+    "pagination_next": "下一頁",
+    "pagination_info": "第 {{current}} / {{total}} 頁 · 顯示 {{start}}-{{end}} / {{count}}",
+    "page_size_label": "每頁",
+    "page_size_option": "{{count}} 行/頁"
   },
   "logs": {
     "title": "記錄檢視",

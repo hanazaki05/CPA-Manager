@@ -1076,7 +1076,7 @@
     "range_14d": "14d",
     "range_30d": "30d",
     "range_all": "All",
-    "search_placeholder": "Search model, channel, source, credential, or endpoint path",
+    "search_placeholder": "Search account, label, auth index, model, channel, source, credential, or endpoint path",
     "auto_refresh": "Auto Refresh",
     "auto_refresh_off": "Off",
     "auto_refresh_5s": "5s",
@@ -1324,7 +1324,12 @@
     "no_filtered_data": "No calls matched the current search filter.",
     "source": "Source",
     "calls": "Calls",
-    "log_rows": "Log Rows"
+    "log_rows": "Log Rows",
+    "pagination_prev": "Previous",
+    "pagination_next": "Next",
+    "pagination_info": "Page {{current}} / {{total}} · Showing {{start}}-{{end}} / {{count}}",
+    "page_size_label": "Per page",
+    "page_size_option": "{{count}} / page"
   },
   "logs": {
     "title": "Logs Viewer",
