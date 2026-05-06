@@ -4,11 +4,11 @@
 
 这是面向 **CLI Proxy API（CPA）** 的单文件 Web 管理面板，并提供可选的 **Usage Service** 用于持久化请求统计。
 
-CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/import` 端点。当前方案通过常驻服务消费 CPA 的 Redis RESP 用量队列，把请求级事件写入 SQLite，并向面板提供兼容 `/usage` 的查询接口。
+CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/import` 端点。当前方案通过常驻服务消费 CPA 的用量队列，把请求级事件写入 SQLite，并向面板提供兼容 `/usage` 的查询接口。
 
 - **主项目**: https://github.com/router-for-me/CLIProxyAPI
 - **示例地址**: https://remote.router-for.me/
-- **推荐 CPA 版本**: >= 6.8.15
+- **推荐 CPA 版本**: >= v6.10.8+
 
 ## 提供什么
 
@@ -31,11 +31,12 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
 
 ## CPA 前置条件
 
-请求统计依赖 CPA 的 Redis RESP 用量队列：
+请求统计依赖 CPA 的用量队列：
 
-- CPA 必须启用 Management，因为 RESP 与 `/v0/management` 使用相同的可用性条件和 Management Key。
+- CPA 必须启用 Management，因为用量队列与 `/v0/management` 使用相同的可用性条件和 Management Key。
 - 在 CPA 中启用用量发布：配置 `usage-statistics-enabled: true`，或通过 `PUT /usage-statistics-enabled` 提交 `{ "value": true }`。
-- RESP 监听在 CPA API 端口，通常是 `8317`；如果 CPA API 启用了 HTTPS/TLS，RESP 也使用同一个 TLS listener。
+- CPA `v6.10.8+` 推荐使用 HTTP 用量队列接口 `/v0/management/usage-queue`，可通过普通 HTTP 反代访问。
+- 旧版 CPA 会自动回退到 Redis RESP 队列；RESP 监听在 CPA API 端口，通常是 `8317`，不能通过普通 HTTP 反代转发。
 - CPA 在内存中保留队列项的时间由 `redis-usage-queue-retention-seconds` 控制，默认 `60` 秒，最大 `3600` 秒。Usage Service 应保持常驻运行。
 - 同一个 CPA 实例只应有一个 Usage Service 消费用量队列。
 
@@ -49,7 +50,7 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
       -> 内置 management.html
       -> /v0/management/usage 从 SQLite 返回
       -> 其他 /v0/management/* 反代到 CPA
-      -> RESP 消费器 -> CPA API 端口
+      -> HTTP/RESP 消费器 -> CPA API 端口
       -> SQLite /data/usage.sqlite
 ```
 
@@ -64,7 +65,7 @@ CPA 上游已经移除内存聚合的 `/usage`、`/usage/export`、`/usage/impor
       -> usage 相关请求访问已配置的 Usage Service
 
 Usage Service
-  -> RESP 消费器 -> CPA API 端口
+  -> HTTP/RESP 消费器 -> CPA API 端口
   -> SQLite /data/usage.sqlite
 ```
 
@@ -192,6 +193,7 @@ docker compose -f docker-compose.usage.yml up --build
 | `CPA_UPSTREAM_URL` | 空 | 可选 CPA 地址，用于无人值守启动 |
 | `CPA_MANAGEMENT_KEY` | 空 | 可选 CPA Management Key，用于无人值守启动 |
 | `CPA_MANAGEMENT_KEY_FILE` | `/run/secrets/cpa_management_key` | 可选密钥文件 |
+| `USAGE_COLLECTOR_MODE` | `auto` | 采集方式：`auto` 优先 HTTP 用量队列并在旧版 CPA 回退 RESP；`http` 强制 HTTP；`resp` 强制 RESP |
 | `USAGE_RESP_QUEUE` | `usage` | RESP key 参数；当前 CPA 会忽略该值，除非上游行为变化，否则保持默认即可 |
 | `USAGE_RESP_POP_SIDE` | `right` | `right` 使用 `RPOP`；`left` 使用 `LPOP` |
 | `USAGE_BATCH_SIZE` | `100` | 每次最多弹出记录数 |
@@ -283,6 +285,7 @@ go run ./cmd/cpa-manager
 
 - **完整 Docker 方案无法连接 CPA**：确认容器内能访问 CPA 地址。Linux 宿主机 CPA 需要 `--add-host=host.docker.internal:host-gateway`。
 - **监控页为空**：确认 CPA 已启用使用统计，检查 Usage Service `/status`，并确认只有一个消费者。
+- **`unsupported RESP prefix 'H'`**：升级 CPA 到 `v6.10.8+` 后保持默认 `USAGE_COLLECTOR_MODE=auto`，Usage Service 会优先使用 HTTP 用量队列；旧版 CPA 或强制 RESP 时，CPA 地址必须是容器/主机内能直连 `8317` 的地址，不能是普通 HTTP 反代域名。
 - **Usage Service 返回 401**：使用 setup 时保存的同一个 Management Key。
 - **Docker 面板数据不更新**：检查 `/status` 中的 `lastConsumedAt`、`lastInsertedAt`、`lastError`。
 - **CPA 控制面板方案有 CORS 错误**：将 `USAGE_CORS_ORIGINS` 设置为 CPA 面板来源；私有部署可保持默认 `*`。
