@@ -1604,6 +1604,27 @@
     "refresh_all_credentials": "Обновить все учётные данные",
     "card_idle_hint": "Используйте кнопку «Обновить все учётные данные» сверху, чтобы загрузить актуальные данные по квотам."
   },
+  "usage_service": {
+    "title": "Внешний сервис статистики",
+    "description": "Когда панель загружается через CPA, настройте отдельный Usage Service для чтения сохранённой статистики SQLite. Во встроенном Docker-режиме это обычно не требуется.",
+    "enable": "Включить внешний Usage Service",
+    "url_label": "Адрес Usage Service",
+    "url_placeholder": "Например http://127.0.0.1:18317",
+    "url_required": "Сначала укажите адрес Usage Service",
+    "check_status": "Проверить статус",
+    "save_and_connect": "Сохранить и подключить",
+    "saved": "Usage Service подключён и сохранён",
+    "save_failed": "Не удалось сохранить Usage Service",
+    "status_failed": "Не удалось проверить статус Usage Service",
+    "disabled_saved": "Внешний Usage Service отключён",
+    "collector": "Сборщик",
+    "mode": "Режим сбора",
+    "transport": "Транспорт",
+    "queue": "Очередь",
+    "events": "События",
+    "last_consumed": "Последнее чтение",
+    "last_error": "Последняя ошибка"
+  },
   "system_info": {
     "title": "Информация о центре управления",
     "about_title": "CLI Proxy API Management Center",

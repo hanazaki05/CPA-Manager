@@ -656,6 +656,20 @@ export function SystemPage() {
                   <strong>{usageServiceStatus.collector?.collector || '-'}</strong>
                 </div>
                 <div>
+                  <span>{t('usage_service.mode', { defaultValue: '采集模式' })}</span>
+                  <strong>{usageServiceStatus.collector?.mode || '-'}</strong>
+                </div>
+                <div>
+                  <span>{t('usage_service.transport', { defaultValue: '传输协议' })}</span>
+                  <strong>{usageServiceStatus.collector?.transport || '-'}</strong>
+                </div>
+                <div>
+                  <span>{t('usage_service.queue', { defaultValue: '队列' })}</span>
+                  <strong>
+                    {usageServiceStatus.collector?.queue || '-'}
+                  </strong>
+                </div>
+                <div>
                   <span>{t('usage_service.events', { defaultValue: '事件数' })}</span>
                   <strong>{usageServiceStatus.events ?? '-'}</strong>
                 </div>

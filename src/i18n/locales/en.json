@@ -1627,6 +1627,9 @@
     "status_failed": "Failed to check Usage Service status",
     "disabled_saved": "External Usage Service disabled",
     "collector": "Collector",
+    "mode": "Collection mode",
+    "transport": "Transport",
+    "queue": "Queue",
     "events": "Events",
     "last_consumed": "Last consumed",
     "last_error": "Last error"

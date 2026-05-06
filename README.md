@@ -4,7 +4,7 @@
 
 A single-file Web UI for **CLI Proxy API (CPA)** plus an optional **Usage Service** for persistent usage analytics.
 
-The CPA memory aggregation endpoints (`/usage`, `/usage/export`, `/usage/import`) have been removed upstream. This project now supports usage analytics through a long-running service that consumes the CPA Redis RESP usage queue, persists request events to SQLite, and exposes `/usage`-compatible APIs for the panel.
+The CPA memory aggregation endpoints (`/usage`, `/usage/export`, `/usage/import`) have been removed upstream. This project now supports usage analytics through a long-running service that consumes the CPA usage queue, persists request events to SQLite, and exposes `/usage`-compatible APIs for the panel.
 
 - **Main project**: https://github.com/router-for-me/CLIProxyAPI
 - **Example URL**: https://remote.router-for.me/
@@ -31,11 +31,12 @@ Full Docker mode does not bundle CPA itself. CPA still runs as the upstream serv
 
 ## CPA Prerequisites
 
-Request statistics require the CPA Redis RESP usage queue:
+Request statistics require the CPA usage queue:
 
-- CPA Management must be enabled because RESP uses the same availability and Management Key as `/v0/management`.
+- CPA Management must be enabled because the usage queue uses the same availability and Management Key as `/v0/management`.
 - Enable usage publishing in CPA with `usage-statistics-enabled: true`, or through `PUT /usage-statistics-enabled` with `{ "value": true }`.
-- The RESP listener is on the CPA API port, usually `8317`; if CPA uses HTTPS/TLS, RESP uses the same TLS listener.
+- CPA `v6.10.8+` is preferred because it exposes the HTTP usage queue endpoint `/v0/management/usage-queue`, which can pass through regular HTTP reverse proxies.
+- Older CPA versions automatically fall back to the Redis RESP queue. The RESP listener is on the CPA API port, usually `8317`, and cannot pass through a regular HTTP reverse proxy.
 - CPA keeps queue items in memory for `redis-usage-queue-retention-seconds`, default `60` seconds and maximum `3600` seconds. Keep Usage Service running continuously.
 - Exactly one Usage Service should consume the same CPA usage queue.
 
@@ -49,7 +50,7 @@ Browser
       -> built-in management.html
       -> /v0/management/usage from SQLite
       -> other /v0/management/* proxied to CPA
-      -> RESP consumer -> CPA API port
+      -> HTTP/RESP consumer -> CPA API port
       -> SQLite /data/usage.sqlite
 ```
 
@@ -64,7 +65,7 @@ Browser
       -> usage calls go to configured Usage Service URL
 
 Usage Service
-  -> RESP consumer -> CPA API port
+  -> HTTP/RESP consumer -> CPA API port
   -> SQLite /data/usage.sqlite
 ```
 
@@ -192,6 +193,7 @@ Most users can configure CPA URL and Management Key from the panel. Environment 
 | `CPA_UPSTREAM_URL` | empty | Optional CPA base URL for unattended startup |
 | `CPA_MANAGEMENT_KEY` | empty | Optional CPA Management Key for unattended startup |
 | `CPA_MANAGEMENT_KEY_FILE` | `/run/secrets/cpa_management_key` | Optional file containing the Management Key |
+| `USAGE_COLLECTOR_MODE` | `auto` | Collection mode: `auto` prefers the HTTP usage queue and falls back to RESP for older CPA; `http` forces HTTP; `resp` forces RESP |
 | `USAGE_RESP_QUEUE` | `usage` | RESP key argument; CPA currently ignores it, leave the default unless upstream changes |
 | `USAGE_RESP_POP_SIDE` | `right` | `right` uses `RPOP`; `left` uses `LPOP` |
 | `USAGE_BATCH_SIZE` | `100` | Maximum queue records per pop |
@@ -281,6 +283,7 @@ go run ./cmd/cpa-manager
 
 - **Cannot connect in full Docker mode**: verify the CPA URL from inside the Usage Service container. For host CPA on Linux, use `--add-host=host.docker.internal:host-gateway`.
 - **Monitoring is empty**: enable CPA usage statistics, verify Usage Service `/status`, and confirm only one consumer is running.
+- **`unsupported RESP prefix 'H'`**: upgrade CPA to `v6.10.8+` and keep the default `USAGE_COLLECTOR_MODE=auto` so Usage Service uses the HTTP usage queue first. On older CPA or forced RESP mode, the CPA URL must be a container/host direct address for port `8317`, not a regular HTTP reverse-proxy domain.
 - **401 from Usage Service**: use the same Management Key that was saved during setup.
 - **Docker panel shows stale data**: check `/status` for `lastConsumedAt`, `lastInsertedAt`, and `lastError`.
 - **CPA panel mode has CORS errors**: set `USAGE_CORS_ORIGINS` to the CPA panel origin or keep the default `*` for private deployments.
