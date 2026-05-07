@@ -224,7 +224,7 @@ If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automa
 | `POST /setup` | Save CPA URL + Management Key and start collection |
 | `GET /v0/management/usage` | Compatible usage payload for the panel |
 | `GET /v0/management/usage/export` | Export usage events as JSONL |
-| `POST /v0/management/usage/import` | Import JSONL usage events |
+| `POST /v0/management/usage/import` | Import JSONL usage events or legacy JSON snapshots |
 | `GET /v0/management/model-prices` | Read SQLite-backed model pricing |
 | `PUT /v0/management/model-prices` | Replace saved model pricing |
 | `POST /v0/management/model-prices/sync` | Sync model prices from LiteLLM pricing metadata |
@@ -232,6 +232,8 @@ If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automa
 | `/v0/management/*` | Proxied to CPA except usage endpoints |
 
 After setup, `/status`, usage, model-pricing, and `/v0/management/*` proxy endpoints require the same Management Key as a Bearer token.
+
+Usage import accepts two file families: JSONL/NDJSON event files exported by Usage Service, and legacy JSON snapshots produced by older CPA `/usage/export`. Legacy JSON can be converted only when `usage.apis.*.models.*.details[]` request details are present. Files that contain only aggregate totals are rejected because request-level monitoring data cannot be reconstructed. Legacy import is a migration/recovery path, not a perfect continuation of newly collected Usage Service data: old files may miss metadata such as `api_key_hash`, channel, request ID, method/path, latency, cache tokens, or failure reason, so account matching, API Key level analysis, and detail accuracy may be lower. Importing legacy files affects totals, trend charts, and account/key breakdowns; use a test or backup database first when accuracy matters.
 
 ## Feature Overview
 
