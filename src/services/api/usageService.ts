@@ -48,7 +48,23 @@ export interface ModelPriceSyncResponse extends ModelPricesResponse {
   skipped: number;
 }
 
+export interface UsageImportResponse {
+  format?: string;
+  added: number;
+  skipped: number;
+  total: number;
+  failed: number;
+  unsupported?: number;
+  warnings?: string[];
+}
+
+export interface UsageExportResponse {
+  blob: Blob;
+  filename: string;
+}
+
 const USAGE_SERVICE_TIMEOUT_MS = 15 * 1000;
+const USAGE_SERVICE_TRANSFER_TIMEOUT_MS = 60 * 1000;
 export const USAGE_SERVICE_ID = 'cpa-manager';
 export const LEGACY_USAGE_SERVICE_ID = 'cpa-usage-service';
 export const USAGE_SERVICE_LAST_CPA_BASE_KEY = 'cpa-manager:last-cpa-base';
@@ -66,6 +82,34 @@ const buildUrl = (base: string, path: string): string => {
 
 const authHeaders = (managementKey?: string) =>
   managementKey ? { Authorization: `Bearer ${managementKey}` } : undefined;
+
+const readHeader = (headers: unknown, name: string): string => {
+  if (!headers || typeof headers !== 'object') return '';
+  const getter = (headers as { get?: (key: string) => unknown }).get;
+  if (typeof getter === 'function') {
+    const value = getter.call(headers, name);
+    return value === undefined || value === null ? '' : String(value);
+  }
+  const target = name.toLowerCase();
+  const entries = Object.entries(headers as Record<string, unknown>);
+  const match = entries.find(([key]) => key.toLowerCase() === target);
+  return match?.[1] === undefined || match?.[1] === null ? '' : String(match[1]);
+};
+
+const parseContentDispositionFilename = (value: string): string => {
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+  const quotedMatch = value.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) return quotedMatch[1].trim();
+  const plainMatch = value.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() || '';
+};
 
 export const usageServiceApi = {
   getInfo: async (base: string): Promise<UsageServiceInfo> => {
@@ -137,6 +181,38 @@ export const usageServiceApi = {
       models ? { models } : {},
       {
         timeout: 30 * 1000,
+        headers: authHeaders(managementKey),
+      }
+    );
+    return response.data;
+  },
+
+  exportUsage: async (
+    base: string,
+    managementKey?: string
+  ): Promise<UsageExportResponse> => {
+    const response = await axios.get<Blob>(buildUrl(base, '/v0/management/usage/export'), {
+      timeout: USAGE_SERVICE_TRANSFER_TIMEOUT_MS,
+      headers: authHeaders(managementKey),
+      responseType: 'blob',
+    });
+    const contentDisposition = readHeader(response.headers, 'content-disposition');
+    return {
+      blob: response.data,
+      filename: parseContentDispositionFilename(contentDisposition) || 'usage-events.jsonl',
+    };
+  },
+
+  importUsage: async (
+    base: string,
+    payload: Blob | string,
+    managementKey?: string
+  ): Promise<UsageImportResponse> => {
+    const response = await axios.post<UsageImportResponse>(
+      buildUrl(base, '/v0/management/usage/import'),
+      payload,
+      {
+        timeout: USAGE_SERVICE_TRANSFER_TIMEOUT_MS,
         headers: authHeaders(managementKey),
       }
     );

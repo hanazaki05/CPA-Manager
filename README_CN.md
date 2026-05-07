@@ -224,7 +224,7 @@ docker compose -f docker-compose.usage.yml up --build
 | `POST /setup` | 保存 CPA 地址和 Management Key，并启动采集 |
 | `GET /v0/management/usage` | 面板兼容用量数据 |
 | `GET /v0/management/usage/export` | JSONL 导出用量事件 |
-| `POST /v0/management/usage/import` | JSONL 导入用量事件 |
+| `POST /v0/management/usage/import` | 导入 JSONL 用量事件或旧版 JSON 快照 |
 | `GET /v0/management/model-prices` | 读取 SQLite 中保存的模型价格 |
 | `PUT /v0/management/model-prices` | 替换已保存的模型价格 |
 | `POST /v0/management/model-prices/sync` | 从 LiteLLM 价格元数据同步模型价格 |
@@ -232,6 +232,8 @@ docker compose -f docker-compose.usage.yml up --build
 | `/v0/management/*` | 除 usage 外反代到 CPA |
 
 setup 后，`/status`、用量、模型价格和 `/v0/management/*` 反代接口需要使用同一个 Management Key 作为 Bearer token。
+
+用量导入支持两类文件：Usage Service 导出的 JSONL/NDJSON 事件文件，以及旧版 CPA `/usage/export` 生成的 JSON 快照。旧版 JSON 只有在 `usage.apis.*.models.*.details[]` 明细存在时才能转换为事件；如果文件只包含聚合总量，Usage Service 会拒绝导入，因为无法还原请求级明细。旧版导入属于迁移/恢复能力，不是与 Usage Service 新采集数据完全等价的历史延续：旧文件可能缺少 `api_key_hash`、渠道、请求 ID、method/path、延迟、缓存 token 或失败原因等元数据，账号匹配、API Key 维度分析和明细精度可能低于新采集数据。导入旧文件会影响总量、趋势图和账号/Key 拆解，准确性敏感时建议先导入测试库或备份库验证。
 
 ## 功能概览
 

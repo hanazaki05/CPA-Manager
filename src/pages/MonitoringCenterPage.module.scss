@@ -238,6 +238,13 @@
   color: var(--monitor-ink);
 }
 
+.quickLinkButton:disabled,
+.refreshButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .clearButton,
 .inlineActionButton {
   gap: 8px;

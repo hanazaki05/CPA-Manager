@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bufio"
 	"context"
 	"embed"
 	"encoding/json"
@@ -33,6 +32,8 @@ type Server struct {
 }
 
 const serviceID = "cpa-manager"
+
+const maxUsageImportBytes int64 = 64 * 1024 * 1024
 
 const modelPriceSyncSource = "litellm"
 
@@ -434,36 +435,43 @@ func (s *Server) handleUsageExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUsageImport(w http.ResponseWriter, r *http.Request) {
-	reader := bufio.NewScanner(r.Body)
-	reader.Buffer(make([]byte, 64*1024), 10*1024*1024)
-	events := make([]usage.Event, 0)
-	failed := 0
-	for reader.Scan() {
-		line := strings.TrimSpace(reader.Text())
-		if line == "" {
-			continue
+	body := http.MaxBytesReader(w, r.Body, maxUsageImportBytes)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, err)
+			return
 		}
-		event, err := usage.NormalizeRaw([]byte(line))
-		if err != nil {
-			failed++
-			continue
-		}
-		events = append(events, event)
-	}
-	if err := reader.Err(); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	result, err := s.store.InsertEvents(r.Context(), events)
+
+	parsed, err := usage.ParseImportPayload(data)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":       err.Error(),
+			"format":      parsed.Format,
+			"failed":      parsed.Failed,
+			"unsupported": parsed.Unsupported,
+			"warnings":    parsed.Warnings,
+		})
+		return
+	}
+
+	result, err := s.store.InsertEvents(r.Context(), parsed.Events)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"added":   result.Inserted,
-		"skipped": result.Skipped,
-		"total":   len(events),
-		"failed":  failed,
+		"format":      parsed.Format,
+		"added":       result.Inserted,
+		"skipped":     result.Skipped,
+		"total":       len(parsed.Events),
+		"failed":      parsed.Failed,
+		"unsupported": parsed.Unsupported,
+		"warnings":    parsed.Warnings,
 	})
 }
 

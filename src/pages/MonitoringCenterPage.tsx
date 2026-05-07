@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type ReactNode,
 } from 'react';
 import { Link } from 'react-router-dom';
@@ -19,6 +20,8 @@ import { Select } from '@/components/ui/Select';
 import {
   IconChevronDown,
   IconChevronUp,
+  IconDownload,
+  IconFileText,
   IconRefreshCw,
   IconSearch,
   IconSlidersHorizontal,
@@ -45,7 +48,7 @@ import type {
   CodexUsagePayload,
   CodexUsageWindow,
 } from '@/types';
-import { maskSensitiveText } from '@/utils/format';
+import { formatFileSize, maskSensitiveText } from '@/utils/format';
 import {
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
@@ -64,6 +67,7 @@ import {
   normalizeAuthIndex,
   type ModelPrice,
 } from '@/utils/usage';
+import { downloadBlob } from '@/utils/download';
 import styles from './MonitoringCenterPage.module.scss';
 
 const TIME_RANGE_OPTIONS: Array<{ value: MonitoringTimeRange; labelKey: string }> = [
@@ -87,6 +91,7 @@ const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const REALTIME_PAGE_SIZE_OPTIONS = [10, 50, 100, 150, 300] as const;
 const DEFAULT_ACCOUNT_PAGE_SIZE = 10;
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
+const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
 
 const DEFAULT_ACCOUNT_SORT = {
   key: 'lastSeenAt',
@@ -218,6 +223,17 @@ type PaginationControlsProps = {
 };
 
 const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+const isUsageImportFile = (file: File) => {
+  const normalizedName = file.name.toLowerCase();
+  const normalizedType = file.type.toLowerCase();
+  return (
+    /\.(json|jsonl|ndjson|txt)$/.test(normalizedName) ||
+    normalizedType === 'application/json' ||
+    normalizedType === 'application/x-ndjson' ||
+    normalizedType === 'text/plain'
+  );
+};
 
 const buildPaginationState = <T,>(
   items: readonly T[],
@@ -1001,6 +1017,7 @@ export function MonitoringCenterPage() {
   const config = useConfigStore((state) => state.config);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const [timeRange, setTimeRange] = useState<MonitoringTimeRange>('today');
   const [searchInput, setSearchInput] = useState('');
   const [autoRefreshMs, setAutoRefreshMs] = useState('5000');
@@ -1013,6 +1030,8 @@ export function MonitoringCenterPage() {
   const [focusedAccount, setFocusedAccount] = useState<string | null>(null);
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
   const [syncingPrices, setSyncingPrices] = useState(false);
+  const [usageExporting, setUsageExporting] = useState(false);
+  const [usageImporting, setUsageImporting] = useState(false);
   const [priceModel, setPriceModel] = useState('');
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(() => createPriceDraft());
   const [accountQuotaStates, setAccountQuotaStates] = useState<Record<string, AccountQuotaState>>(
@@ -1026,6 +1045,7 @@ export function MonitoringCenterPage() {
   const focusSnapshotRef = useRef<FocusSnapshot | null>(null);
   const accountQuotaStatesRef = useRef<Record<string, AccountQuotaState>>({});
   const accountQuotaRequestIdsRef = useRef<Record<string, number>>({});
+  const usageImportInputRef = useRef<HTMLInputElement | null>(null);
   const deferredSearch = useDeferredValue(searchInput);
 
   const {
@@ -1034,8 +1054,11 @@ export function MonitoringCenterPage() {
     error: usageError,
     lastRefreshedAt,
     modelPrices,
+    usageServiceAvailable,
     setModelPrices,
     syncModelPrices,
+    exportUsage,
+    importUsage,
     loadUsage,
   } = useUsageData();
 
@@ -1637,6 +1660,103 @@ export function MonitoringCenterPage() {
     }
   }, [showNotification, syncModelPrices, syncPriceModels, t]);
 
+  const resolveUsageTransferError = useCallback(
+    (error: unknown) => {
+      const rawMessage =
+        error instanceof Error ? error.message : String(error || t('common.unknown_error'));
+      return rawMessage === 'usage_import_export_requires_usage_service'
+        ? t('usage_stats.import_export_requires_usage_service')
+        : rawMessage;
+    },
+    [t]
+  );
+
+  const handleUsageExport = useCallback(async () => {
+    setUsageExporting(true);
+    try {
+      const response = await exportUsage();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadBlob({
+        filename: response.filename || `usage-events-${timestamp}.jsonl`,
+        blob: response.blob,
+      });
+      showNotification(t('usage_stats.export_success'), 'success');
+    } catch (error: unknown) {
+      const message = resolveUsageTransferError(error);
+      showNotification(`${t('notification.download_failed')}${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setUsageExporting(false);
+    }
+  }, [exportUsage, resolveUsageTransferError, showNotification, t]);
+
+  const importUsageFile = useCallback(
+    async (file: File) => {
+      setUsageImporting(true);
+      try {
+        const result = await importUsage(file);
+        const unsupported = result.unsupported ?? 0;
+        showNotification(
+          `${t('usage_stats.import_success', {
+            added: result.added ?? 0,
+            skipped: result.skipped ?? 0,
+            total: result.total ?? 0,
+            failed: result.failed ?? 0,
+          })}${unsupported > 0 ? `, ${t('usage_stats.import_unsupported', { count: unsupported })}` : ''}`,
+          (result.failed ?? 0) > 0 || unsupported > 0 ? 'warning' : 'success'
+        );
+        if (result.format?.startsWith('legacy') || (result.warnings ?? []).length > 0) {
+          showNotification(t('usage_stats.import_legacy_warning'), 'warning');
+        }
+        await refreshAll();
+      } catch (error: unknown) {
+        const message = resolveUsageTransferError(error);
+        showNotification(`${t('notification.upload_failed')}${message ? `: ${message}` : ''}`, 'error');
+      } finally {
+        setUsageImporting(false);
+      }
+    },
+    [importUsage, refreshAll, resolveUsageTransferError, showNotification, t]
+  );
+
+  const handleUsageImportClick = useCallback(() => {
+    if (!usageServiceAvailable) {
+      showNotification(t('usage_stats.import_export_requires_usage_service'), 'warning');
+      return;
+    }
+    usageImportInputRef.current?.click();
+  }, [showNotification, t, usageServiceAvailable]);
+
+  const handleUsageImportChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      if (!isUsageImportFile(file)) {
+        showNotification(t('usage_stats.import_invalid'), 'error');
+        return;
+      }
+      if (file.size > MAX_USAGE_IMPORT_FILE_SIZE) {
+        showNotification(
+          t('usage_stats.import_file_too_large', {
+            maxSize: formatFileSize(MAX_USAGE_IMPORT_FILE_SIZE),
+          }),
+          'error'
+        );
+        return;
+      }
+
+      showConfirmation({
+        title: t('usage_stats.import_confirm_title'),
+        message: t('usage_stats.import_confirm_body', { name: file.name }),
+        confirmText: t('usage_stats.import'),
+        variant: 'primary',
+        onConfirm: () => importUsageFile(file),
+      });
+    },
+    [importUsageFile, showConfirmation, showNotification, t]
+  );
+
   return (
     <div className={styles.page}>
       {overallLoading && !usage ? (
@@ -1798,6 +1918,41 @@ export function MonitoringCenterPage() {
             >
               {t('usage_stats.model_price_settings')}
             </button>
+            <button
+              type="button"
+              className={styles.quickLinkButton}
+              onClick={() => void handleUsageExport()}
+              disabled={!usageServiceAvailable || usageExporting || usageImporting}
+              title={
+                usageServiceAvailable
+                  ? t('usage_stats.export')
+                  : t('usage_stats.import_export_requires_usage_service')
+              }
+            >
+              <IconDownload size={16} />
+              {usageExporting ? t('common.loading') : t('usage_stats.export')}
+            </button>
+            <button
+              type="button"
+              className={styles.quickLinkButton}
+              onClick={handleUsageImportClick}
+              disabled={!usageServiceAvailable || usageExporting || usageImporting}
+              title={
+                usageServiceAvailable
+                  ? t('usage_stats.import')
+                  : t('usage_stats.import_export_requires_usage_service')
+              }
+            >
+              <IconFileText size={16} />
+              {usageImporting ? t('common.loading') : t('usage_stats.import')}
+            </button>
+            <input
+              ref={usageImportInputRef}
+              type="file"
+              accept=".json,.jsonl,.ndjson,.txt,application/json,application/x-ndjson,text/plain"
+              style={{ display: 'none' }}
+              onChange={handleUsageImportChange}
+            />
             {config?.loggingToFile ? (
               <Link to="/logs" className={styles.quickLink}>
                 {t('monitoring.open_logs')}

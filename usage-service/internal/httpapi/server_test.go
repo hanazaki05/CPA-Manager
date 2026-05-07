@@ -103,6 +103,85 @@ func TestModelListProxyPreservesAuthorization(t *testing.T) {
 	}
 }
 
+func TestUsageImportAcceptsLegacyExportAndSkipsDuplicates(t *testing.T) {
+	handler := newTestHandler(t, "http://example.test", true)
+	payload := `{
+	  "version": 1,
+	  "exported_at": "2026-01-02T03:04:05Z",
+	  "usage": {
+	    "apis": {
+	      "POST /v1/chat/completions": {
+	        "models": {
+	          "gpt-4o": {
+	            "details": [
+	              {
+	                "timestamp": "2026-01-02T03:04:05Z",
+	                "source": "alice@example.com",
+	                "auth_index": "auth-1",
+	                "tokens": {
+	                  "input_tokens": 10,
+	                  "output_tokens": 20,
+	                  "total_tokens": 30
+	                },
+	                "failed": false
+	              }
+	            ]
+	          }
+	        }
+	      }
+	    }
+	  }
+	}`
+
+	first := postUsageImport(t, handler, payload)
+	if first.Format != "legacy_usage_export" || first.Added != 1 || first.Skipped != 0 || first.Total != 1 {
+		t.Fatalf("first import = %#v", first)
+	}
+	if len(first.Warnings) == 0 {
+		t.Fatalf("expected legacy warnings: %#v", first)
+	}
+
+	second := postUsageImport(t, handler, payload)
+	if second.Format != "legacy_usage_export" || second.Added != 0 || second.Skipped != 1 || second.Total != 1 {
+		t.Fatalf("second import = %#v", second)
+	}
+}
+
+func postUsageImport(t *testing.T, handler http.Handler, payload string) struct {
+	Format      string   `json:"format"`
+	Added       int      `json:"added"`
+	Skipped     int      `json:"skipped"`
+	Total       int      `json:"total"`
+	Failed      int      `json:"failed"`
+	Unsupported int      `json:"unsupported"`
+	Warnings    []string `json:"warnings"`
+} {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/usage/import", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer management-key")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("import status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var response struct {
+		Format      string   `json:"format"`
+		Added       int      `json:"added"`
+		Skipped     int      `json:"skipped"`
+		Total       int      `json:"total"`
+		Failed      int      `json:"failed"`
+		Unsupported int      `json:"unsupported"`
+		Warnings    []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return response
+}
+
 func TestModelListProxyRequiresSetup(t *testing.T) {
 	handler := newTestHandler(t, "", false)
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
