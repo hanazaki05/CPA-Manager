@@ -33,3 +33,7 @@ settings.local.json
 *.njsproj
 *.sln
 *.sw?
+
+TODO.md
+
+/bin/tmp/
