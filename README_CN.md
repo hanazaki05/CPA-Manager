@@ -6,9 +6,15 @@
 
 CPA 自 v6.10.0 起不再内置用量统计。当前方案通过常驻 Usage Service 消费 CPA 的用量队列，把请求级事件写入 SQLite，并向面板提供兼容的用量查询接口。
 
-- **主项目**: https://github.com/router-for-me/CLIProxyAPI
-- **示例地址**: https://remote.router-for.me/
+- **CPA 主项目**: https://github.com/router-for-me/CLIProxyAPI
 - **推荐 CPA 版本**: >= v6.10.8
+
+## 面板预览
+
+![请求监控面板，展示筛选器、用量指标、账号汇总以及导入导出操作](img/screenshot-20260507-194947.png)
+![账号用量详情，展示 Codex 配额进度和模型级费用拆解](img/screenshot-20260507-195041.png)
+![实时监控表，展示请求状态、延迟、Token 用量和费用](img/screenshot-20260507-195154.png)
+![Codex 账号巡检进度，展示实时探测日志和清理建议](img/screenshot-20260507-194738.png)
 
 ## 提供什么
 
@@ -246,14 +252,6 @@ setup 后，`/status`、用量、模型价格和 `/v0/management/*` 反代接口
 - **Codex 账号巡检**：批量探测 Codex 认证池并给出清理建议
 - **日志**：增量读取和筛选文件日志
 - **中心信息**：模型列表、版本检查、本地状态工具、外部 Usage Service 配置
-
-## 功能截图
-
-![功能截图 1](img/image.png)
-
-![功能截图 2](img/image_1.png)
-
-![功能截图 3](img/image_2.png)
 
 ## 开发命令
 

@@ -6,9 +6,15 @@ A single-file Web UI for **CLI Proxy API (CPA)** plus an optional **Usage Servic
 
 Since v6.10.0, CPA no longer includes built-in usage statistics. This project now supports usage analytics through a long-running Usage Service that consumes the CPA usage queue, persists request events to SQLite, and exposes panel-compatible usage APIs.
 
-- **Main project**: https://github.com/router-for-me/CLIProxyAPI
-- **Example URL**: https://remote.router-for.me/
+- **CPA Main project**: https://github.com/router-for-me/CLIProxyAPI
 - **Recommended CPA version**: >= v6.10.8
+
+## Panel Preview
+
+![Request monitoring dashboard showing filters, usage KPIs, account summaries, and export/import actions](img/screenshot-20260507-194947.png)
+![Account usage detail with Codex quota bars and model-level cost breakdown](img/screenshot-20260507-195041.png)
+![Realtime monitoring table showing request status, latency, token usage, and cost](img/screenshot-20260507-195154.png)
+![Codex account inspection progress with live probe logs and cleanup recommendations](img/screenshot-20260507-194738.png)
 
 ## What This Provides
 
@@ -246,12 +252,6 @@ Usage import accepts two file families: JSONL/NDJSON event files exported by Usa
 - **Codex Account Inspection**: batch probing and cleanup suggestions for Codex auth pools
 - **Logs**: incremental file log reading and filtering
 - **Management Center Info**: model list, version checks, local state tools, external Usage Service configuration
-
-## Screenshots
-
-![Feature screenshot 1](img/image.png)
-![Feature screenshot 2](img/image_1.png)
-![Feature screenshot 3](img/image_2.png)
 
 ## Development
 
