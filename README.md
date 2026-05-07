@@ -303,6 +303,7 @@ go run ./cmd/cpa-manager
 
 ## Acknowledgements
 
+- Thanks to the upstream projects [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) and [Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) for the foundation and inspiration.
 - Thanks to the [Linux.do](https://linux.do/) community for project promotion and feedback.
 
 ## License
