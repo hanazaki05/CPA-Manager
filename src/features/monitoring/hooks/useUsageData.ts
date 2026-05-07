@@ -6,6 +6,8 @@ import {
   usageServiceApi,
   type ModelPricesResponse,
   type ModelPriceSyncResponse,
+  type UsageExportResponse,
+  type UsageImportResponse,
 } from '@/services/api/usageService';
 import { useAuthStore, useUsageServiceStore } from '@/stores';
 import { detectApiBaseFromLocation } from '@/utils/connection';
@@ -26,8 +28,11 @@ export interface UseUsageDataReturn {
   error: string;
   lastRefreshedAt: Date | null;
   modelPrices: Record<string, ModelPrice>;
+  usageServiceAvailable: boolean;
   setModelPrices: (prices: Record<string, ModelPrice>) => Promise<void>;
   syncModelPrices: (models?: string[]) => Promise<ModelPriceSyncResponse>;
+  exportUsage: () => Promise<UsageExportResponse>;
+  importUsage: (file: File) => Promise<UsageImportResponse>;
   loadUsage: () => Promise<void>;
 }
 
@@ -43,7 +48,7 @@ export function useUsageData(): UseUsageDataReturn {
   const [modelPrices, setModelPricesState] = useState<Record<string, ModelPrice>>({});
   const requestIdRef = useRef(0);
 
-  const resolveModelPriceServiceBase = useCallback(async (): Promise<string> => {
+  const resolveUsageServiceBase = useCallback(async (): Promise<string> => {
     if (usageServiceEnabled && usageServiceBase) {
       return usageServiceBase;
     }
@@ -71,31 +76,47 @@ export function useUsageData(): UseUsageDataReturn {
   }, [apiBase, usageServiceBase, usageServiceEnabled]);
 
   const getModelPricesFromApi = useCallback(async (): Promise<ModelPricesResponse> => {
-    const serviceBase = await resolveModelPriceServiceBase();
+    const serviceBase = await resolveUsageServiceBase();
     if (!serviceBase) {
       return { prices: {} };
     }
     return usageServiceApi.getModelPrices(serviceBase, managementKey);
-  }, [managementKey, resolveModelPriceServiceBase]);
+  }, [managementKey, resolveUsageServiceBase]);
 
   const saveModelPricesToApi = useCallback(
     async (prices: Record<string, ModelPrice>): Promise<ModelPricesResponse> => {
-      const serviceBase = await resolveModelPriceServiceBase();
+      const serviceBase = await resolveUsageServiceBase();
       if (!serviceBase) {
         throw new Error('model_price_api_unavailable');
       }
       return usageServiceApi.saveModelPrices(serviceBase, prices, managementKey);
     },
-    [managementKey, resolveModelPriceServiceBase]
+    [managementKey, resolveUsageServiceBase]
   );
 
   const syncModelPricesFromApi = useCallback(async (models?: string[]): Promise<ModelPriceSyncResponse> => {
-    const serviceBase = await resolveModelPriceServiceBase();
+    const serviceBase = await resolveUsageServiceBase();
     if (!serviceBase) {
       throw new Error('model_price_sync_requires_usage_service');
     }
     return usageServiceApi.syncModelPrices(serviceBase, managementKey, models);
-  }, [managementKey, resolveModelPriceServiceBase]);
+  }, [managementKey, resolveUsageServiceBase]);
+
+  const exportUsageFromApi = useCallback(async (): Promise<UsageExportResponse> => {
+    const serviceBase = await resolveUsageServiceBase();
+    if (!serviceBase) {
+      throw new Error('usage_import_export_requires_usage_service');
+    }
+    return usageServiceApi.exportUsage(serviceBase, managementKey);
+  }, [managementKey, resolveUsageServiceBase]);
+
+  const importUsageToApi = useCallback(async (file: File): Promise<UsageImportResponse> => {
+    const serviceBase = await resolveUsageServiceBase();
+    if (!serviceBase) {
+      throw new Error('usage_import_export_requires_usage_service');
+    }
+    return usageServiceApi.importUsage(serviceBase, file, managementKey);
+  }, [managementKey, resolveUsageServiceBase]);
 
   const loadModelPricesFromStorage = useCallback(async () => {
     const fallbackPrices = loadModelPrices();
@@ -172,8 +193,11 @@ export function useUsageData(): UseUsageDataReturn {
     error,
     lastRefreshedAt,
     modelPrices,
+    usageServiceAvailable: Boolean(usageServiceEnabled && usageServiceBase),
     setModelPrices,
     syncModelPrices,
+    exportUsage: exportUsageFromApi,
+    importUsage: importUsageToApi,
     loadUsage,
   };
 }
