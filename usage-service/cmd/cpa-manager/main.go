@@ -16,7 +16,10 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
 	db, err := store.Open(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("open sqlite: %v", err)
