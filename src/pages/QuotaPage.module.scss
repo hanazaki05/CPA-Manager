@@ -80,6 +80,40 @@
   font-size: 14px;
 }
 
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(190px, 260px);
+  gap: $spacing-md;
+  align-items: end;
+  padding: $spacing-md;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  border-radius: $radius-lg;
+  background: color-mix(in srgb, var(--bg-secondary) 58%, transparent);
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.toolbarField {
+  min-width: 0;
+
+  :global(.form-group) {
+    margin-bottom: 0;
+  }
+}
+
+.sortField {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.toolbarLabel {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .pageSizeSelect {
   padding: 8px 12px;
   border: 1px solid var(--border-color);

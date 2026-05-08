@@ -1617,7 +1617,16 @@
     "refresh_files": "Refresh auth files",
     "refresh_files_and_quota": "Refresh files & quota",
     "refresh_all_credentials": "Refresh all credentials",
-    "card_idle_hint": "Use the top \"Refresh all credentials\" button to fetch the latest quota data."
+    "card_idle_hint": "Use the top \"Refresh all credentials\" button to fetch the latest quota data.",
+    "search_label": "Search credentials",
+    "search_placeholder": "Search name, type, account ID, plan, or error status",
+    "search_empty_title": "No matching credentials",
+    "search_empty_desc": "Adjust the search keyword or clear the search filter.",
+    "sort_label": "Sort",
+    "sort_default": "Default order",
+    "sort_name_asc": "Name A-Z",
+    "sort_plan_desc": "Plan high to low",
+    "sort_plan_asc": "Plan low to high"
   },
   "usage_service": {
     "title": "External Usage Service",

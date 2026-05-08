@@ -1617,7 +1617,16 @@
     "refresh_files": "刷新认证文件",
     "refresh_files_and_quota": "刷新认证文件&额度",
     "refresh_all_credentials": "刷新全部凭证",
-    "card_idle_hint": "请使用顶部“刷新全部凭证”按钮获取最新额度。"
+    "card_idle_hint": "请使用顶部“刷新全部凭证”按钮获取最新额度。",
+    "search_label": "搜索凭证",
+    "search_placeholder": "搜索名称、类型、账号 ID、套餐或错误状态",
+    "search_empty_title": "没有匹配的凭证",
+    "search_empty_desc": "请调整搜索关键词或清空搜索条件。",
+    "sort_label": "排序",
+    "sort_default": "默认顺序",
+    "sort_name_asc": "名称 A-Z",
+    "sort_plan_desc": "套餐高到低",
+    "sort_plan_asc": "套餐低到高"
   },
   "usage_service": {
     "title": "外部用量统计服务",
