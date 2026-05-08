@@ -1486,9 +1486,13 @@
           "debug_desc": "Enable verbose debug logging",
           "commercial_mode": "Commercial Mode",
           "commercial_mode_desc": "Disable high-overhead middleware to support high concurrency",
+          "usage_statistics_enabled": "Enable Usage Statistics",
+          "usage_statistics_enabled_desc": "Allow CPA to publish request usage events for Usage Service to consume continuously",
           "logging_to_file": "Log to File",
           "logging_to_file_desc": "Save logs to files",
-          "logs_max_size": "Log File Size Limit (MB)"
+          "logs_max_size": "Log File Size Limit (MB)",
+          "redis_usage_queue_retention": "Usage Queue Retention (seconds)",
+          "redis_usage_queue_retention_hint": "CPA defaults to 60 seconds and allows up to 3600 seconds. Leave empty to use the default. Keep Usage Service running continuously."
         },
         "network": {
           "title": "Network Configuration",
@@ -1598,6 +1602,7 @@
         "validation_blocked": "Fix validation errors before saving",
         "port_range": "Enter a valid port between 1 and 65535",
         "non_negative_integer": "Enter a non-negative whole number",
+        "retention_seconds_range": "Enter an integer between 0 and 3600",
         "payload_invalid_number": "Enter a valid number",
         "payload_invalid_boolean": "Choose true or false",
         "payload_invalid_json": "Enter valid JSON"
