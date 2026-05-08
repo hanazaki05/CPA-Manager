@@ -16,7 +16,6 @@ import type { AnimationPlaybackControlsWithThen } from 'motion-dom';
 import { useInterval } from '@/hooks/useInterval';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -583,54 +582,52 @@ export function AuthFilesPage() {
   );
 
   const renderFilterTags = () => (
-    <div className={styles.filterRail}>
-      <div className={styles.filterTags}>
-        {existingTypes.map((type) => {
-          const isActive = filter === type;
-          const iconSrc = getAuthFileIcon(type, resolvedTheme);
-          const color =
-            type === 'all'
-              ? { bg: 'var(--bg-tertiary)', text: 'var(--text-primary)' }
-              : getTypeColor(type, resolvedTheme);
-          const buttonStyle = {
-            '--filter-color': color.text,
-            '--filter-surface': color.bg,
-            '--filter-active-text': resolvedTheme === 'dark' ? '#111827' : '#ffffff',
-          } as CSSProperties;
+    <div className={styles.filterTags}>
+      {existingTypes.map((type) => {
+        const isActive = filter === type;
+        const iconSrc = getAuthFileIcon(type, resolvedTheme);
+        const color =
+          type === 'all'
+            ? { bg: 'var(--color-primary-light-9)', text: 'var(--primary-color)' }
+            : getTypeColor(type, resolvedTheme);
+        const buttonStyle = {
+          '--filter-color': color.text,
+          '--filter-surface': color.bg,
+          '--filter-active-text': resolvedTheme === 'dark' ? '#111827' : '#ffffff',
+        } as CSSProperties;
 
-          return (
-            <button
-              key={type}
-              className={`${styles.filterTag} ${isActive ? styles.filterTagActive : ''}`}
-              style={buttonStyle}
-              onClick={() => {
-                setFilter(type);
-                setPage(1);
-              }}
-            >
-              <span className={styles.filterTagLabel}>
-                {type === 'all' ? (
-                  <span className={`${styles.filterTagIconWrap} ${styles.filterAllIconWrap}`}>
-                    <IconFilterAll className={styles.filterAllIcon} size={16} />
-                  </span>
-                ) : (
-                  <span className={styles.filterTagIconWrap}>
-                    {iconSrc ? (
-                      <img src={iconSrc} alt="" className={styles.filterTagIcon} />
-                    ) : (
-                      <span className={styles.filterTagIconFallback}>
-                        {getTypeLabel(t, type).slice(0, 1).toUpperCase()}
-                      </span>
-                    )}
-                  </span>
-                )}
-                <span className={styles.filterTagText}>{getTypeLabel(t, type)}</span>
-              </span>
-              <span className={styles.filterTagCount}>{typeCounts[type] ?? 0}</span>
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={type}
+            className={`${styles.filterTag} ${isActive ? styles.filterTagActive : ''}`}
+            style={buttonStyle}
+            onClick={() => {
+              setFilter(type);
+              setPage(1);
+            }}
+          >
+            <span className={styles.filterTagLabel}>
+              {type === 'all' ? (
+                <span className={`${styles.filterTagIconWrap} ${styles.filterAllIconWrap}`}>
+                  <IconFilterAll className={styles.filterAllIcon} size={16} />
+                </span>
+              ) : (
+                <span className={styles.filterTagIconWrap}>
+                  {iconSrc ? (
+                    <img src={iconSrc} alt="" className={styles.filterTagIcon} />
+                  ) : (
+                    <span className={styles.filterTagIconFallback}>
+                      {getTypeLabel(t, type).slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+              )}
+              <span className={styles.filterTagText}>{getTypeLabel(t, type)}</span>
+            </span>
+            <span className={styles.filterTagCount}>{typeCounts[type] ?? 0}</span>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -662,9 +659,9 @@ export function AuthFilesPage() {
         <p className={styles.description}>{t('auth_files.description')}</p>
       </div>
 
-      <Card
-        title={titleNode}
-        extra={
+      <section className={styles.authFilesShell}>
+        <div className={styles.authFilesHeader}>
+          <div className={styles.authFilesTitle}>{titleNode}</div>
           <div className={styles.headerActions}>
             <Button variant="secondary" size="sm" onClick={handleHeaderRefresh} disabled={loading}>
               {t('common.refresh')}
@@ -704,14 +701,13 @@ export function AuthFilesPage() {
               onChange={handleFileChange}
             />
           </div>
-        }
-      >
+        </div>
+
         {error && <div className={styles.errorBox}>{error}</div>}
 
         <div className={styles.filterSection}>
-          {renderFilterTags()}
-
-          <div className={styles.filterContent}>
+          <div className={styles.filterPanel}>
+            <div className={styles.filterPanelTags}>{renderFilterTags()}</div>
             <div className={styles.filterControlsPanel}>
               <div className={styles.filterControls}>
                 <div className={styles.filterItem}>
@@ -803,7 +799,9 @@ export function AuthFilesPage() {
                 </div>
               </div>
             </div>
+          </div>
 
+          <div className={styles.filterContent}>
             {loading ? (
               <div className={styles.hint}>{t('common.loading')}</div>
             ) : pageItems.length === 0 ? (
@@ -867,7 +865,7 @@ export function AuthFilesPage() {
             )}
           </div>
         </div>
-      </Card>
+      </section>
 
       <OAuthExcludedCard
         disableControls={disableControls}
