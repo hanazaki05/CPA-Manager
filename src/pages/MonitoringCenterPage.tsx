@@ -307,14 +307,27 @@ const getCodexPlanLabel = (planType: string | null | undefined, t: TFunction): s
 };
 
 const buildAccountSecondaryText = (row: MonitoringAccountRow) => {
-  const extraAuthLabels = row.authLabels.filter((label) => label && label !== row.account);
+  const primaryText = row.displayAccount || row.account;
+  if (row.account && row.account !== primaryText) {
+    return row.account;
+  }
+
+  const extraAuthLabels = row.authLabels.filter((label) => label && label !== primaryText);
   if (extraAuthLabels.length > 0) {
     return joinShort(extraAuthLabels, 2);
   }
-  if (row.channels.length > 0) {
-    return joinShort(row.channels, 2);
+  const extraChannels = row.channels.filter((label) => label && label !== '-' && label !== primaryText);
+  if (extraChannels.length > 0) {
+    return joinShort(extraChannels, 2);
   }
   return '';
+};
+
+const buildAccountOptionLabel = (row: MonitoringAccountRow) => {
+  if (!row.displayAccount || row.displayAccount === row.account) {
+    return row.account;
+  }
+  return `${row.displayAccount} / ${row.account}`;
 };
 
 const buildAccountSummaryMetrics = (
@@ -765,7 +778,7 @@ function AccountSummaryPrimary({
       aria-expanded={expanded}
     >
       {expanded ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
-      <span className={styles.accountButtonLabel}>{row.account}</span>
+      <span className={styles.accountButtonLabel}>{row.displayAccount || row.account}</span>
       {secondaryText ? <small>{secondaryText}</small> : null}
     </button>
   );
@@ -1123,14 +1136,16 @@ export function MonitoringCenterPage() {
     [filteredRows, t]
   );
 
+  const accountOptionRows = useMemo(() => buildAccountRows(filteredRows), [filteredRows]);
+
   const accountOptions = useMemo(
     () => [
       { value: 'all', label: t('monitoring.filter_all_accounts') },
-      ...Array.from(new Map(filteredRows.map((row) => [row.account, row.account])).entries())
+      ...Array.from(new Map(accountOptionRows.map((row) => [row.account, buildAccountOptionLabel(row)])).entries())
         .sort((left, right) => left[1].localeCompare(right[1]))
         .map(([value, label]) => ({ value, label })),
     ],
-    [filteredRows, t]
+    [accountOptionRows, t]
   );
 
   const modelOptions = useMemo(
