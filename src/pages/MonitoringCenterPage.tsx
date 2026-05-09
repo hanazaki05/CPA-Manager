@@ -20,10 +20,13 @@ import { Select } from '@/components/ui/Select';
 import {
   IconChevronDown,
   IconChevronUp,
+  IconChartLine,
   IconDownload,
+  IconExternalLink,
   IconFileText,
   IconRefreshCw,
   IconSearch,
+  IconSettings,
   IconSlidersHorizontal,
   IconTimer,
 } from '@/components/ui/icons';
@@ -101,7 +104,7 @@ const DEFAULT_ACCOUNT_SORT = {
 type StatusFilter = 'all' | 'success' | 'failed';
 
 type PanelProps = {
-  title: string;
+  title?: string;
   subtitle?: string;
   extra?: ReactNode;
   children: ReactNode;
@@ -113,6 +116,7 @@ type SummaryCardProps = {
   value: string;
   meta: string;
   tone?: MonitoringStatusTone;
+  variant?: 'primary' | 'secondary';
 };
 
 type FocusSnapshot = {
@@ -607,23 +611,34 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
 };
 
 function Panel({ title, subtitle, extra, children, className }: PanelProps) {
+  const hasHeader = Boolean(title || subtitle || extra);
+
   return (
     <Card className={[styles.panel, className].filter(Boolean).join(' ')}>
-      <div className={styles.panelHeader}>
-        <div>
-          <h2 className={styles.panelTitle}>{title}</h2>
-          {subtitle ? <p className={styles.panelSubtitle}>{subtitle}</p> : null}
+      {hasHeader ? (
+        <div className={styles.panelHeader}>
+          <div>
+            {title ? <h2 className={styles.panelTitle}>{title}</h2> : null}
+            {subtitle ? <p className={styles.panelSubtitle}>{subtitle}</p> : null}
+          </div>
+          {extra ? <div className={styles.panelExtra}>{extra}</div> : null}
         </div>
-        {extra ? <div className={styles.panelExtra}>{extra}</div> : null}
-      </div>
+      ) : null}
       {children}
     </Card>
   );
 }
 
-function SummaryCard({ label, value, meta, tone }: SummaryCardProps) {
+function SummaryCard({ label, value, meta, tone, variant = 'primary' }: SummaryCardProps) {
+  const cardClassName = [
+    styles.summaryCard,
+    variant === 'secondary' ? styles.summaryCardSecondary : styles.summaryCardPrimary,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <Card className={styles.summaryCard}>
+    <Card className={cardClassName}>
       <span className={styles.summaryLabel}>{label}</span>
       <strong className={`${styles.summaryValue} ${tone ? styles[`tone${tone}`] : ''}`}>
         {value}
@@ -981,13 +996,14 @@ function ExpandedAccountCard({
   onRefreshQuota: () => void;
 }) {
   return (
-    <div className={styles.expandedAccountCard}>
+    <div className={styles.expandedAccountDetails}>
       <div className={styles.expandedAccountSummary}>
         <div className={styles.expandedAccountPrimary}>
           <AccountSummaryPrimary row={row} expanded onToggle={onToggle} />
         </div>
         {summaryMetrics.map((metric) => (
           <div key={metric.key} className={styles.expandedAccountMetricValue}>
+            <span>{metric.label}</span>
             <strong className={metric.valueClassName}>{metric.value}</strong>
           </div>
         ))}
@@ -1293,11 +1309,19 @@ export function MonitoringCenterPage() {
     [modelPrices]
   );
 
-  const selectedFiltersCount =
-    [selectedAccount, selectedProvider, selectedModel, selectedChannel, selectedStatus].filter(
-      (value) => value !== 'all'
-    ).length + (deferredSearch.trim() ? 1 : 0);
   const hasSearchFilter = Boolean(deferredSearch.trim());
+  const failedGroupCount = groupedRealtimeRows.filter((row) => row.failureCalls > 0).length;
+  const failedOnlyActive = selectedStatus === 'failed';
+  const connectionTone: MonitoringStatusTone =
+    connectionStatus === 'connected' ? 'good' : connectionStatus === 'connecting' ? 'warn' : 'bad';
+  const connectionLabel =
+    connectionStatus === 'connected'
+      ? t('common.connected_status')
+      : connectionStatus === 'connecting'
+        ? t('common.connecting_status')
+        : connectionStatus === 'error'
+          ? t('common.error')
+          : t('common.disconnected_status');
 
   const accountOverviewColumns = useMemo<AccountOverviewColumn[]>(
     () => [
@@ -1320,23 +1344,11 @@ export function MonitoringCenterPage() {
     [t]
   );
 
-  const summaryCards: SummaryCardProps[] = [
+  const primarySummaryCards: SummaryCardProps[] = [
     {
       label: t('monitoring.total_calls'),
       value: formatCompactNumber(scopedSummary.totalCalls),
       meta: `${accountRows.length} ${t('monitoring.accounts_suffix')}`,
-    },
-    {
-      label: t('monitoring.success_calls'),
-      value: formatCompactNumber(scopedSummary.successCalls),
-      meta: formatPercent(scopedSummary.successRate),
-      tone: 'good',
-    },
-    {
-      label: t('monitoring.failure_calls'),
-      value: formatCompactNumber(scopedSummary.failureCalls),
-      meta: `${groupedRealtimeRows.filter((row) => row.failureCalls > 0).length} ${t('monitoring.groups_suffix')}`,
-      tone: scopedSummary.failureCalls > 0 ? 'bad' : 'good',
     },
     {
       label: t('monitoring.call_success_rate'),
@@ -1350,24 +1362,10 @@ export function MonitoringCenterPage() {
             : 'bad',
     },
     {
-      label: t('monitoring.total_tokens'),
-      value: formatCompactNumber(scopedSummary.totalTokens),
-      meta: `${t('monitoring.reasoning_tokens')} ${formatCompactNumber(scopedSummary.reasoningTokens)}`,
-    },
-    {
-      label: t('monitoring.input_tokens'),
-      value: formatCompactNumber(scopedSummary.inputTokens),
-      meta: `${t('monitoring.of_token_mix')} ${formatPercent(scopedSummary.totalTokens > 0 ? scopedSummary.inputTokens / scopedSummary.totalTokens : 0)}`,
-    },
-    {
-      label: t('monitoring.output_tokens'),
-      value: formatCompactNumber(scopedSummary.outputTokens),
-      meta: `${t('monitoring.of_token_mix')} ${formatPercent(scopedSummary.totalTokens > 0 ? scopedSummary.outputTokens / scopedSummary.totalTokens : 0)}`,
-    },
-    {
-      label: t('monitoring.cached_tokens'),
-      value: formatCompactNumber(scopedSummary.cachedTokens),
-      meta: `${t('monitoring.of_input_tokens')} ${formatPercent(scopedSummary.inputTokens > 0 ? scopedSummary.cachedTokens / scopedSummary.inputTokens : 0)}`,
+      label: t('monitoring.failure_calls'),
+      value: formatCompactNumber(scopedSummary.failureCalls),
+      meta: `${failedGroupCount} ${t('monitoring.groups_suffix')}`,
+      tone: scopedSummary.failureCalls > 0 ? 'bad' : 'good',
     },
     {
       label: t('monitoring.estimated_cost'),
@@ -1376,6 +1374,33 @@ export function MonitoringCenterPage() {
         ? t('monitoring.estimated_cost_hint')
         : t('monitoring.estimated_cost_missing'),
       tone: hasPrices ? undefined : 'warn',
+    },
+  ];
+
+  const secondarySummaryCards: SummaryCardProps[] = [
+    {
+      label: t('monitoring.total_tokens'),
+      value: formatCompactNumber(scopedSummary.totalTokens),
+      meta: `${t('monitoring.reasoning_tokens')} ${formatCompactNumber(scopedSummary.reasoningTokens)}`,
+      variant: 'secondary',
+    },
+    {
+      label: t('monitoring.input_tokens'),
+      value: formatCompactNumber(scopedSummary.inputTokens),
+      meta: `${t('monitoring.of_token_mix')} ${formatPercent(scopedSummary.totalTokens > 0 ? scopedSummary.inputTokens / scopedSummary.totalTokens : 0)}`,
+      variant: 'secondary',
+    },
+    {
+      label: t('monitoring.output_tokens'),
+      value: formatCompactNumber(scopedSummary.outputTokens),
+      meta: `${t('monitoring.of_token_mix')} ${formatPercent(scopedSummary.totalTokens > 0 ? scopedSummary.outputTokens / scopedSummary.totalTokens : 0)}`,
+      variant: 'secondary',
+    },
+    {
+      label: t('monitoring.cached_tokens'),
+      value: formatCompactNumber(scopedSummary.cachedTokens),
+      meta: `${t('monitoring.of_input_tokens')} ${formatPercent(scopedSummary.inputTokens > 0 ? scopedSummary.cachedTokens / scopedSummary.inputTokens : 0)}`,
+      variant: 'secondary',
     },
   ];
 
@@ -1406,6 +1431,10 @@ export function MonitoringCenterPage() {
     setSelectedModel('all');
     setSelectedChannel('all');
     setSelectedStatus('all');
+  }, []);
+
+  const toggleFailedOnly = useCallback(() => {
+    setSelectedStatus((previous) => (previous === 'failed' ? 'all' : 'failed'));
   }, []);
 
   const loadAccountQuota = useCallback(
@@ -1683,7 +1712,10 @@ export function MonitoringCenterPage() {
       showNotification(t('usage_stats.export_success'), 'success');
     } catch (error: unknown) {
       const message = resolveUsageTransferError(error);
-      showNotification(`${t('notification.download_failed')}${message ? `: ${message}` : ''}`, 'error');
+      showNotification(
+        `${t('notification.download_failed')}${message ? `: ${message}` : ''}`,
+        'error'
+      );
     } finally {
       setUsageExporting(false);
     }
@@ -1710,7 +1742,10 @@ export function MonitoringCenterPage() {
         await refreshAll();
       } catch (error: unknown) {
         const message = resolveUsageTransferError(error);
-        showNotification(`${t('notification.upload_failed')}${message ? `: ${message}` : ''}`, 'error');
+        showNotification(
+          `${t('notification.upload_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
       } finally {
         setUsageImporting(false);
       }
@@ -1768,16 +1803,98 @@ export function MonitoringCenterPage() {
         </div>
       ) : null}
 
-      <section className={styles.masthead}>
-        <div className={styles.mastheadGlow} aria-hidden="true" />
-
-        <div className={styles.mastheadCopy}>
-          <span className={styles.eyebrow}>{t('monitoring.realtime_console_eyebrow')}</span>
-          <h1 className={styles.title}>{t('monitoring.title')}</h1>
-          <p className={styles.subtitle}>{t('monitoring.console_subtitle')}</p>
+      <div className={styles.headerShell}>
+        <div className={styles.pageHeader}>
+          <h1 className={styles.pageTitle}>{t('monitoring.title')}</h1>
+          <p className={styles.description}>{t('monitoring.console_subtitle')}</p>
         </div>
 
-        <div className={styles.mastheadControls}>
+        <div className={styles.statusBar}>
+          <span className={`${styles.statusBadge} ${styles[`tone${connectionTone}`]}`}>
+            <span className={styles.statusDot} aria-hidden="true" />
+            {connectionLabel}
+          </span>
+          <div className={styles.statusMeta}>
+            <span>
+              {t('monitoring.last_sync')}:{' '}
+              {lastRefreshedAt ? lastRefreshedAt.toLocaleTimeString(i18n.language) : '--'}
+            </span>
+            <span className={scopedFailureCount > 0 ? styles.statusMetaWarn : undefined}>
+              {`${t('monitoring.recent_failures')}: ${scopedFailureCount}`}
+            </span>
+            <span>{`${t('monitoring.total_calls')}: ${formatCompactNumber(scopedSummary.totalCalls)}`}</span>
+          </div>
+        </div>
+      </div>
+
+      <section className={styles.actionBar} aria-label={t('common.action')}>
+        <div className={styles.actionGroup}>
+          <button
+            type="button"
+            className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+            onClick={() => void handleUsageExport()}
+            disabled={!usageServiceAvailable || usageExporting || usageImporting}
+            title={
+              usageServiceAvailable
+                ? t('usage_stats.export')
+                : t('usage_stats.import_export_requires_usage_service')
+            }
+          >
+            <IconDownload size={16} />
+            <span>{usageExporting ? t('common.loading') : t('usage_stats.export')}</span>
+          </button>
+          <button
+            type="button"
+            className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+            onClick={handleUsageImportClick}
+            disabled={!usageServiceAvailable || usageExporting || usageImporting}
+            title={
+              usageServiceAvailable
+                ? t('usage_stats.import')
+                : t('usage_stats.import_export_requires_usage_service')
+            }
+          >
+            <IconFileText size={16} />
+            <span>{usageImporting ? t('common.loading') : t('usage_stats.import')}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => setIsPriceModalOpen(true)}
+          >
+            <IconSettings size={16} />
+            <span>{t('usage_stats.model_price_settings')}</span>
+          </button>
+          <input
+            ref={usageImportInputRef}
+            type="file"
+            accept=".json,.jsonl,.ndjson,.txt,application/json,application/x-ndjson,text/plain"
+            style={{ display: 'none' }}
+            onChange={handleUsageImportChange}
+          />
+        </div>
+
+        <div className={`${styles.actionGroup} ${styles.actionGroupNav}`}>
+          <Link
+            to="/monitoring/codex-inspection"
+            className={`${styles.actionButton} ${styles.quickNavLink}`}
+          >
+            <IconChartLine size={16} />
+            <span>{t('monitoring.codex_inspection_entry')}</span>
+            <IconExternalLink size={14} />
+          </Link>
+          {config?.loggingToFile ? (
+            <Link to="/logs" className={`${styles.actionButton} ${styles.quickNavLink}`}>
+              <IconFileText size={16} />
+              <span>{t('monitoring.open_logs')}</span>
+              <IconExternalLink size={14} />
+            </Link>
+          ) : null}
+        </div>
+      </section>
+
+      <Panel className={styles.toolbarPanel}>
+        <div className={styles.controlBar}>
           <div className={styles.segmentedControl}>
             {TIME_RANGE_OPTIONS.map((option) => (
               <button
@@ -1791,173 +1908,90 @@ export function MonitoringCenterPage() {
             ))}
           </div>
 
-          <div className={styles.refreshCluster}>
-            <span className={styles.syncPill}>
-              {t('monitoring.last_sync')}:{' '}
-              {lastRefreshedAt ? lastRefreshedAt.toLocaleTimeString(i18n.language) : '--'}
-            </span>
-
-            <div className={styles.refreshControls}>
-              <div className={styles.autoRefreshField}>
-                <span className={styles.autoRefreshLabel}>
-                  <IconTimer size={16} />
-                  {t('monitoring.auto_refresh')}
-                </span>
-                <Select
-                  className={styles.autoRefreshSelect}
-                  triggerClassName={styles.autoRefreshSelectTrigger}
-                  value={autoRefreshMs}
-                  options={AUTO_REFRESH_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: t(option.labelKey),
-                  }))}
-                  onChange={setAutoRefreshMs}
-                  ariaLabel={t('monitoring.auto_refresh')}
-                  fullWidth={false}
-                />
-              </div>
-
-              <button
-                type="button"
-                className={styles.refreshButton}
-                onClick={() => void refreshAll()}
-                disabled={overallLoading}
-              >
-                <IconRefreshCw
-                  size={16}
-                  className={overallLoading ? styles.refreshIconSpinning : styles.refreshIcon}
-                />
-                <span className={styles.refreshButtonLabel}>{t('usage_stats.refresh')}</span>
-              </button>
+          <div className={styles.refreshControls}>
+            <div className={styles.autoRefreshField}>
+              <span className={styles.autoRefreshLabel}>
+                <IconTimer size={16} />
+                {t('monitoring.auto_refresh')}
+              </span>
+              <Select
+                className={styles.autoRefreshSelect}
+                triggerClassName={styles.autoRefreshSelectTrigger}
+                value={autoRefreshMs}
+                options={AUTO_REFRESH_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                onChange={setAutoRefreshMs}
+                ariaLabel={t('monitoring.auto_refresh')}
+                fullWidth={false}
+              />
             </div>
+
+            <button
+              type="button"
+              className={styles.refreshButton}
+              onClick={() => void refreshAll()}
+              disabled={overallLoading}
+            >
+              <IconRefreshCw
+                size={16}
+                className={overallLoading ? styles.refreshIconSpinning : styles.refreshIcon}
+              />
+              <span className={styles.refreshButtonLabel}>{t('usage_stats.refresh')}</span>
+            </button>
           </div>
         </div>
-      </section>
 
-      <Panel
-        title={t('monitoring.toolbar_title')}
-        subtitle={
-          selectedFiltersCount > 0
-            ? t('monitoring.active_filters_hint', {
-                count: selectedFiltersCount,
-                rows: scopedRows.length,
-              })
-            : t('monitoring.realtime_table_desc')
-        }
-        className={styles.toolbarPanel}
-        extra={
-          <button type="button" className={styles.clearButton} onClick={clearFilters}>
-            <IconSlidersHorizontal size={16} />
-            <span>{t('monitoring.clear_filters')}</span>
-          </button>
-        }
-      >
-        <div className={styles.filterGrid}>
-          <Select
-            value={selectedAccount}
-            options={accountOptions}
-            onChange={handleAccountFilterChange}
-            ariaLabel={t('monitoring.filter_account')}
-          />
-          <Select
-            value={selectedProvider}
-            options={providerOptions}
-            onChange={setSelectedProvider}
-            ariaLabel={t('monitoring.filter_provider')}
-          />
-          <Select
-            value={selectedModel}
-            options={modelOptions}
-            onChange={setSelectedModel}
-            ariaLabel={t('monitoring.filter_model')}
-          />
-          <Select
-            value={selectedChannel}
-            options={channelOptions}
-            onChange={setSelectedChannel}
-            ariaLabel={t('monitoring.filter_channel')}
-          />
-          <Select
-            value={selectedStatus}
-            options={statusOptions}
-            onChange={(value) => setSelectedStatus(value as StatusFilter)}
-            ariaLabel={t('monitoring.filter_status')}
-          />
-        </div>
-
-        <div className={styles.toolbarFoot}>
-          <Input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder={t('monitoring.search_placeholder')}
-            className={styles.searchInput}
-            rightElement={<IconSearch size={16} />}
-            aria-label={t('monitoring.search_placeholder')}
-          />
-
-          <div className={styles.toolbarMeta}>
-            <span
-              className={styles.metaPill}
-            >{`${t('monitoring.accounts_suffix')}: ${accountRows.length}`}</span>
-            <span
-              className={styles.metaPill}
-            >{`${t('monitoring.log_rows')}: ${realtimeLogRows.length}`}</span>
-            <span
-              className={styles.metaPill}
-            >{`${t('monitoring.calls')}: ${formatCompactNumber(scopedSummary.totalCalls)}`}</span>
-          </div>
-
-          <div className={styles.quickLinkRow}>
-            <Link to="/monitoring/codex-inspection" className={styles.quickLinkButton}>
-              {t('monitoring.codex_inspection_entry')}
-            </Link>
-            <button
-              type="button"
-              className={styles.quickLinkButton}
-              onClick={() => setIsPriceModalOpen(true)}
-            >
-              {t('usage_stats.model_price_settings')}
-            </button>
-            <button
-              type="button"
-              className={styles.quickLinkButton}
-              onClick={() => void handleUsageExport()}
-              disabled={!usageServiceAvailable || usageExporting || usageImporting}
-              title={
-                usageServiceAvailable
-                  ? t('usage_stats.export')
-                  : t('usage_stats.import_export_requires_usage_service')
-              }
-            >
-              <IconDownload size={16} />
-              {usageExporting ? t('common.loading') : t('usage_stats.export')}
-            </button>
-            <button
-              type="button"
-              className={styles.quickLinkButton}
-              onClick={handleUsageImportClick}
-              disabled={!usageServiceAvailable || usageExporting || usageImporting}
-              title={
-                usageServiceAvailable
-                  ? t('usage_stats.import')
-                  : t('usage_stats.import_export_requires_usage_service')
-              }
-            >
-              <IconFileText size={16} />
-              {usageImporting ? t('common.loading') : t('usage_stats.import')}
-            </button>
-            <input
-              ref={usageImportInputRef}
-              type="file"
-              accept=".json,.jsonl,.ndjson,.txt,application/json,application/x-ndjson,text/plain"
-              style={{ display: 'none' }}
-              onChange={handleUsageImportChange}
+        <div className={styles.filterBar}>
+          <div className={styles.filterGrid}>
+            <div className={styles.filterAccountStack}>
+              <Select
+                value={selectedAccount}
+                options={accountOptions}
+                onChange={handleAccountFilterChange}
+                ariaLabel={t('monitoring.filter_account')}
+              />
+            </div>
+            <Select
+              value={selectedProvider}
+              options={providerOptions}
+              onChange={setSelectedProvider}
+              ariaLabel={t('monitoring.filter_provider')}
             />
-            {config?.loggingToFile ? (
-              <Link to="/logs" className={styles.quickLink}>
-                {t('monitoring.open_logs')}
-              </Link>
-            ) : null}
+            <Select
+              value={selectedModel}
+              options={modelOptions}
+              onChange={setSelectedModel}
+              ariaLabel={t('monitoring.filter_model')}
+            />
+            <Select
+              value={selectedChannel}
+              options={channelOptions}
+              onChange={setSelectedChannel}
+              ariaLabel={t('monitoring.filter_channel')}
+            />
+            <Select
+              value={selectedStatus}
+              options={statusOptions}
+              onChange={(value) => setSelectedStatus(value as StatusFilter)}
+              ariaLabel={t('monitoring.filter_status')}
+            />
+          </div>
+
+          <div className={styles.filterSearchRow}>
+            <Input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder={t('monitoring.search_placeholder')}
+              className={styles.filterSearchInput}
+              rightElement={<IconSearch size={16} />}
+              aria-label={t('monitoring.search_placeholder')}
+            />
+            <button type="button" className={styles.clearButton} onClick={clearFilters}>
+              <IconSlidersHorizontal size={16} />
+              <span>{t('monitoring.clear_filters')}</span>
+            </button>
           </div>
         </div>
 
@@ -1970,10 +2004,17 @@ export function MonitoringCenterPage() {
         ) : null}
       </Panel>
 
-      <section className={styles.summaryGrid}>
-        {summaryCards.map((card) => (
-          <SummaryCard key={card.label} {...card} />
-        ))}
+      <section className={styles.summarySection}>
+        <div className={styles.summaryHero}>
+          {primarySummaryCards.map((card) => (
+            <SummaryCard key={card.label} {...card} />
+          ))}
+        </div>
+        <div className={styles.summarySub}>
+          {secondarySummaryCards.map((card) => (
+            <SummaryCard key={card.label} {...card} />
+          ))}
+        </div>
       </section>
 
       <Panel
@@ -2122,6 +2163,18 @@ export function MonitoringCenterPage() {
           <div className={styles.inlineMetrics}>
             <span>{`${t('monitoring.log_rows')}: ${realtimeLogRows.length}`}</span>
             <span>{`${t('monitoring.recent_failures')}: ${scopedFailureCount}`}</span>
+            <button
+              type="button"
+              className={[
+                styles.filterToggleChip,
+                failedOnlyActive ? styles.filterToggleChipActive : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={toggleFailedOnly}
+            >
+              {t('monitoring.filter_status_failed')}
+            </button>
           </div>
         }
       >
@@ -2145,9 +2198,20 @@ export function MonitoringCenterPage() {
               {realtimePagination.pageItems.map((row) => (
                 <tr key={row.id} className={row.failed ? styles.logRowFailed : undefined}>
                   <td>
-                    <div className={styles.primaryCell}>
-                      <span>{row.provider}</span>
-                      <small>{row.account || row.authLabel || row.accountMasked || '-'}</small>
+                    <div className={styles.logTypeCell}>
+                      <span
+                        className={[
+                          styles.logTypeIcon,
+                          row.failed ? styles.logTypeIconFailed : styles.logTypeIconSuccess,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        aria-hidden="true"
+                      />
+                      <div className={styles.primaryCell}>
+                        <span>{row.provider}</span>
+                        <small>{row.account || row.authLabel || row.accountMasked || '-'}</small>
+                      </div>
                     </div>
                   </td>
                   <td>
