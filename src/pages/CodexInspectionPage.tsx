@@ -367,6 +367,10 @@ export function CodexInspectionPage() {
             setRunStatus('paused');
           }
         },
+        onResultsChange: (nextResult) => {
+          if (activeSessionIdRef.current !== session.id) return;
+          setResult(nextResult);
+        },
       });
 
       sessionRef.current = session;
@@ -540,7 +544,7 @@ export function CodexInspectionPage() {
 
   const summaryCards = useMemo<SummaryCard[]>(() => {
     const summarySource =
-      result?.summary ?? (runStatus === 'running' || runStatus === 'paused' ? progress.summary : null);
+      runStatus === 'running' || runStatus === 'paused' ? progress.summary : result?.summary ?? null;
     const blank = '--';
     const dash = '—';
     const probeSetCount = summarySource ? summarySource.probeSetCount : null;
@@ -672,7 +676,7 @@ export function CodexInspectionPage() {
   const statusTone = statusToneMap[runStatus];
   const statusLabel = statusLabelMap[runStatus];
 
-  const lastFinishedLabel = result
+  const lastFinishedLabel = result && result.finishedAt > 0
     ? `${t('monitoring.codex_inspection_last_finished_at')} · ${formatTime(result.finishedAt, i18n.language)}`
     : null;
 
@@ -942,7 +946,7 @@ export function CodexInspectionPage() {
               size="sm"
               onClick={handleExecutePlanned}
               loading={executing}
-              disabled={!result || runStatus === 'running' || executing || pendingActionCount === 0}
+              disabled={!result || isInspectionInFlight || executing || pendingActionCount === 0}
             >
               {executing
                 ? t('monitoring.codex_inspection_executing')
@@ -1037,7 +1041,7 @@ export function CodexInspectionPage() {
                             size="sm"
                             variant={item.action === 'delete' ? 'danger' : 'secondary'}
                             onClick={() => handleExecuteSingle(item)}
-                            disabled={runStatus === 'running' || executing}
+                            disabled={isInspectionInFlight || executing}
                           >
                             {formatActionLabel(item.action, t)}
                           </Button>
