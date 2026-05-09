@@ -535,6 +535,13 @@
   margin-bottom: 16px;
 }
 
+.panelHeaderCopy {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 0;
+  min-width: 0;
+}
+
 .panelTitle {
   margin: 0;
   font-size: 19px;
@@ -551,6 +558,7 @@
 
 .panelExtra {
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .accountOverviewHeaderActions {
@@ -659,17 +667,26 @@
 }
 
 .filterSearchRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
 }
 
-.filterSearchRow :global(.form-group) {
-  flex: 1 1 520px;
+.filterSearchInputWrap,
+.filterSearchAction {
+  min-width: 0;
+}
+
+.filterSearchInputWrap :global(.form-group) {
   min-width: min(100%, 360px);
   margin-bottom: 0;
+}
+
+.filterSearchAction {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .filterChip {
@@ -719,6 +736,15 @@
 
 .quickLinkRow {
   justify-content: flex-end;
+}
+
+.realtimeHeaderActions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.realtimeHeaderActions > * {
+  max-width: 100%;
 }
 
 .inlineMetrics span {
@@ -2256,6 +2282,41 @@
   }
 }
 
+@container monitoring-page (max-width: 1024px) {
+  .panelHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panelHeaderCopy,
+  .panelExtra,
+  .accountOverviewHeaderActions,
+  .realtimeHeaderActions {
+    width: 100%;
+  }
+
+  .accountOverviewHeaderActions {
+    justify-items: stretch;
+  }
+
+  .accountOverviewSortBar,
+  .realtimeHeaderActions {
+    justify-content: flex-start;
+  }
+
+  .filterSearchRow :global(.form-group) {
+    min-width: 0;
+  }
+
+  .filterSearchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .filterSearchAction {
+    justify-content: stretch;
+  }
+}
+
 @container monitoring-page (max-width: 900px) {
   .filterGrid,
   .summaryHero,
@@ -2277,6 +2338,28 @@
 }
 
 @container monitoring-page (max-width: 768px) {
+  .page {
+    gap: 16px;
+  }
+
+  .headerShell {
+    gap: 14px;
+  }
+
+  .pageHeader {
+    gap: 6px;
+  }
+
+  .pageTitle {
+    font-size: 24px;
+  }
+
+  .description,
+  .panelSubtitle {
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
   .masthead,
   .panel,
   .summaryCard {
@@ -2297,12 +2380,28 @@
   .toolbarControls,
   .actionBar,
   .actionGroup,
-  .refreshControls {
+  .refreshControls,
+  .filterSearchRow,
+  .realtimeHeaderActions {
     width: 100%;
   }
 
+  .controlBar,
+  .refreshControls,
+  .paginationBar,
+  .paginationControls,
+  .realtimeHeaderActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .segmentedControl,
+  .realtimeHeaderActions {
+    justify-content: flex-start;
+  }
+
   .actionButton {
-    flex: 1 1 180px;
+    flex: 1 1 calc(50% - 8px);
   }
 
   .autoRefreshField {
@@ -2312,6 +2411,11 @@
 
   .autoRefreshSelect {
     width: 124px;
+  }
+
+  .autoRefreshLabel {
+    min-width: 0;
+    white-space: normal;
   }
 
   .filterGrid,
@@ -2338,11 +2442,6 @@
     flex: 1 1 0;
   }
 
-  .paginationBar,
-  .paginationControls {
-    justify-content: stretch;
-  }
-
   .paginationInfo,
   .pageSizeField {
     width: 100%;
@@ -2367,10 +2466,37 @@
 
   .accountOverviewSortBar {
     justify-content: stretch;
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .accountOverviewCardHeader {
     flex-direction: column;
+  }
+
+  .accountOverviewModeToggle .segmentButton {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .accountOverviewSortLabel {
+    white-space: normal;
+  }
+
+  .filterSearchRow :global(.form-group) {
+    min-width: 0;
+  }
+
+  .refreshButton,
+  .clearButton,
+  .realtimeHeaderActions > span,
+  .realtimeHeaderActions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .statusMeta span {
+    white-space: normal;
   }
 
   .accountOverviewCardActionStack {
@@ -2416,12 +2542,97 @@
   }
 }
 
-@media (max-width: 640px) {
-  .customRangeModalGrid {
-    grid-template-columns: 1fr;
+@container monitoring-page (max-width: 480px) {
+  .accountOverviewMetricGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
   }
 
-  .accountOverviewMetricGrid {
+  .accountOverviewMetricCard {
+    gap: 4px;
+    padding: 10px 8px;
+    border-radius: 14px;
+  }
+
+  .accountOverviewMetricLabel {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .accountOverviewMetricValue {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    gap: 14px;
+  }
+
+  .panel,
+  .actionBar {
+    border-radius: 18px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .panelHeader {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .pageTitle {
+    font-size: 22px;
+  }
+
+  .description,
+  .panelSubtitle {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .segmentedControl {
+    gap: 6px;
+    padding: 4px;
+    border-radius: 18px;
+  }
+
+  .segmentButton {
+    flex: 1 1 calc(50% - 6px);
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .actionButton {
+    flex-basis: 100%;
+  }
+
+  .autoRefreshField {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .autoRefreshSelect {
+    width: 100%;
+  }
+
+  .autoRefreshSelectTrigger {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .statusMeta span,
+  .realtimeHeaderActions > span,
+  .realtimeHeaderActions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .customRangeModalGrid {
     grid-template-columns: 1fr;
   }
 }

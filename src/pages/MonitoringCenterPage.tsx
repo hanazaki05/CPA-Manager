@@ -56,6 +56,7 @@ import {
   type AccountSortState,
   type MonitoringAccountOverviewMode,
 } from '@/features/monitoring/accountOverviewState';
+import { MonitoringPanel } from '@/features/monitoring/components/MonitoringPanel';
 import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
@@ -145,14 +146,6 @@ const parseDateTimeLocalValue = (value: string) => {
 };
 
 type StatusFilter = 'all' | 'success' | 'failed';
-
-type PanelProps = {
-  title?: string;
-  subtitle?: string;
-  extra?: ReactNode;
-  children: ReactNode;
-  className?: string;
-};
 
 type SummaryCardProps = {
   label: string;
@@ -617,25 +610,6 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
       right.id.localeCompare(left.id)
   );
 };
-
-function Panel({ title, subtitle, extra, children, className }: PanelProps) {
-  const hasHeader = Boolean(title || subtitle || extra);
-
-  return (
-    <Card className={[styles.panel, className].filter(Boolean).join(' ')}>
-      {hasHeader ? (
-        <div className={styles.panelHeader}>
-          <div>
-            {title ? <h2 className={styles.panelTitle}>{title}</h2> : null}
-            {subtitle ? <p className={styles.panelSubtitle}>{subtitle}</p> : null}
-          </div>
-          {extra ? <div className={styles.panelExtra}>{extra}</div> : null}
-        </div>
-      ) : null}
-      {children}
-    </Card>
-  );
-}
 
 function SummaryCard({ label, value, meta, tone, variant = 'primary' }: SummaryCardProps) {
   const cardClassName = [
@@ -2440,7 +2414,7 @@ export function MonitoringCenterPage() {
         </div>
       </section>
 
-      <Panel className={styles.toolbarPanel}>
+      <MonitoringPanel className={styles.toolbarPanel}>
         <div className={styles.controlBar}>
           <div className={styles.segmentedControl}>
             {TIME_RANGE_OPTIONS.map((option) => (
@@ -2527,18 +2501,22 @@ export function MonitoringCenterPage() {
           </div>
 
           <div className={styles.filterSearchRow}>
-            <Input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={t('monitoring.search_placeholder')}
-              className={styles.filterSearchInput}
-              rightElement={<IconSearch size={16} />}
-              aria-label={t('monitoring.search_placeholder')}
-            />
-            <button type="button" className={styles.clearButton} onClick={clearFilters}>
-              <IconSlidersHorizontal size={16} />
-              <span>{t('monitoring.clear_filters')}</span>
-            </button>
+            <div className={styles.filterSearchInputWrap}>
+              <Input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder={t('monitoring.search_placeholder')}
+                className={styles.filterSearchInput}
+                rightElement={<IconSearch size={16} />}
+                aria-label={t('monitoring.search_placeholder')}
+              />
+            </div>
+            <div className={styles.filterSearchAction}>
+              <button type="button" className={styles.clearButton} onClick={clearFilters}>
+                <IconSlidersHorizontal size={16} />
+                <span>{t('monitoring.clear_filters')}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2549,7 +2527,7 @@ export function MonitoringCenterPage() {
             <span>{t('monitoring.usage_disabled_body')}</span>
           </div>
         ) : null}
-      </Panel>
+      </MonitoringPanel>
 
       <section className={styles.summarySection}>
         <div className={styles.summaryHero}>
@@ -2564,7 +2542,7 @@ export function MonitoringCenterPage() {
         </div>
       </section>
 
-      <Panel
+      <MonitoringPanel
         title={t('monitoring.account_overview_title')}
         subtitle={t('monitoring.account_overview_desc')}
         className={styles.accountPanel}
@@ -2806,14 +2784,14 @@ export function MonitoringCenterPage() {
           onPageSizeChange={handleAccountPageSizeChange}
           t={t}
         />
-      </Panel>
+      </MonitoringPanel>
 
-      <Panel
+      <MonitoringPanel
         title={t('monitoring.realtime_table_title')}
         subtitle={t('monitoring.realtime_table_desc')}
         className={styles.realtimePanel}
         extra={
-          <div className={styles.inlineMetrics}>
+          <div className={`${styles.inlineMetrics} ${styles.realtimeHeaderActions}`}>
             <span>{`${t('monitoring.log_rows')}: ${realtimeLogRows.length}`}</span>
             <span>{`${t('monitoring.recent_failures')}: ${scopedFailureCount}`}</span>
             <button
@@ -2942,7 +2920,7 @@ export function MonitoringCenterPage() {
           onPageSizeChange={handleRealtimePageSizeChange}
           t={t}
         />
-      </Panel>
+      </MonitoringPanel>
 
       <Modal
         open={isCustomRangeModalOpen}
