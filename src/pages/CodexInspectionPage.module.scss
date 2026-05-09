@@ -8,10 +8,10 @@
   --inspect-line-strong: var(--border-primary);
   --inspect-ink: var(--text-primary);
   --inspect-muted: var(--text-secondary);
-  --inspect-accent: #2563eb;
-  --inspect-accent-soft: rgba(37, 99, 235, 0.12);
+  --inspect-accent: var(--primary-color);
+  --inspect-accent-soft: var(--color-primary-light-9);
   --inspect-green: var(--success-color);
-  --inspect-amber: #d97706;
+  --inspect-amber: var(--warning-color);
   --inspect-red: var(--error-color);
   color: var(--inspect-ink);
 }
@@ -20,6 +20,28 @@
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pageTitle {
+  margin: 0;
+  color: var(--inspect-ink);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.description {
+  margin: 0;
+  color: var(--inspect-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .heroCard,
@@ -44,7 +66,7 @@
 }
 
 .heroHeader {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .heroCopy,
@@ -597,6 +619,10 @@
   .heroHeader,
   .panelHeader {
     flex-direction: column;
+  }
+
+  .heroHeader {
+    align-items: stretch;
   }
 
   .heroActions {

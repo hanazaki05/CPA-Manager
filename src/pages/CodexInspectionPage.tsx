@@ -10,7 +10,6 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconExternalLink,
-  IconShield,
 } from '@/components/ui/icons';
 import {
   applyCodexInspectionExecutionResult,
@@ -647,16 +646,14 @@ export function CodexInspectionPage() {
 
   return (
     <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h1 className={styles.pageTitle}>{t('monitoring.codex_inspection_title')}</h1>
+        <p className={styles.description}>{t('monitoring.codex_inspection_desc')}</p>
+      </div>
+
       <Card className={styles.heroCard}>
         <div className={styles.heroHeader}>
-          <div className={styles.heroCopy}>
-            <div className={styles.heroEyebrow}>
-              <IconShield size={14} />
-              <span>{t('monitoring.codex_inspection_eyebrow')}</span>
-            </div>
-            <h1 className={styles.heroTitle}>{t('monitoring.codex_inspection_title')}</h1>
-            {/*<p className={styles.heroSubtitle}>{t('monitoring.codex_inspection_desc')}</p>*/}
-          </div>
+          <h2 className={styles.panelTitle}>{t('monitoring.codex_inspection_progress_title')}</h2>
 
           <div className={styles.heroActions}>
             <Link to="/monitoring" className={styles.backLink}>
