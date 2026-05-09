@@ -119,6 +119,24 @@ const buildSearchText = (...parts: Array<string | number | boolean | null | unde
 const shouldIncludeInStats = (row: Pick<MonitoringEventRow, 'failed' | 'inputTokens' | 'outputTokens'>) =>
   row.failed || row.inputTokens > 0 || row.outputTokens > 0;
 
+const isEffectiveLabel = (value: string) => {
+  const trimmed = value.trim();
+  return Boolean(trimmed) && trimmed !== '-';
+};
+
+const looksLikeMaskedUsageSource = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed.startsWith('m:') || trimmed.startsWith('k:');
+};
+
+const resolveAccountDisplayName = (account: string, channels: Iterable<string>) => {
+  const channelLabels = Array.from(new Set(Array.from(channels).filter(isEffectiveLabel)));
+  if (looksLikeMaskedUsageSource(account) && channelLabels.length === 1) {
+    return channelLabels[0];
+  }
+  return account || channelLabels[0] || '-';
+};
+
 type MonitoringChannelMeta = {
   key: string;
   name: string;
@@ -323,6 +341,7 @@ export type MonitoringAccountModelSpendRow = {
 export type MonitoringAccountRow = {
   id: string;
   account: string;
+  displayAccount: string;
   accountMasked: string;
   authLabels: string[];
   authIndices: string[];
@@ -763,32 +782,36 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
   });
 
   return Array.from(grouped.values())
-    .map((item) => ({
-      id: item.id,
-      account: item.account,
-      accountMasked: item.accountMasked,
-      authLabels: Array.from(item.authLabels).sort(),
-      authIndices: Array.from(item.authIndices).sort(),
-      channels: Array.from(item.channels).sort(),
-      totalCalls: item.totalCalls,
-      successCalls: item.successCalls,
-      failureCalls: item.failureCalls,
-      successRate: item.totalCalls > 0 ? item.successCalls / item.totalCalls : 1,
-      inputTokens: item.inputTokens,
-      outputTokens: item.outputTokens,
-      cachedTokens: item.cachedTokens,
-      totalTokens: item.totalTokens,
-      totalCost: item.totalCost,
-      averageLatencyMs: item.latencyCount > 0 ? item.latencySum / item.latencyCount : null,
-      lastSeenAt: item.lastSeenAt,
-      recentPattern: buildRecentPattern(item.rows),
-      models: Array.from(item.modelMap.values())
-        .map((model) => ({
-          ...model,
-          successRate: model.totalCalls > 0 ? model.successCalls / model.totalCalls : 1,
-        }))
-        .sort((left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls),
-    }))
+    .map((item) => {
+      const channels = Array.from(item.channels).sort();
+      return {
+        id: item.id,
+        account: item.account,
+        displayAccount: resolveAccountDisplayName(item.account, channels),
+        accountMasked: item.accountMasked,
+        authLabels: Array.from(item.authLabels).sort(),
+        authIndices: Array.from(item.authIndices).sort(),
+        channels,
+        totalCalls: item.totalCalls,
+        successCalls: item.successCalls,
+        failureCalls: item.failureCalls,
+        successRate: item.totalCalls > 0 ? item.successCalls / item.totalCalls : 1,
+        inputTokens: item.inputTokens,
+        outputTokens: item.outputTokens,
+        cachedTokens: item.cachedTokens,
+        totalTokens: item.totalTokens,
+        totalCost: item.totalCost,
+        averageLatencyMs: item.latencyCount > 0 ? item.latencySum / item.latencyCount : null,
+        lastSeenAt: item.lastSeenAt,
+        recentPattern: buildRecentPattern(item.rows),
+        models: Array.from(item.modelMap.values())
+          .map((model) => ({
+            ...model,
+            successRate: model.totalCalls > 0 ? model.successCalls / model.totalCalls : 1,
+          }))
+          .sort((left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls),
+      };
+    })
     .sort(
       (left, right) =>
         right.lastSeenAt - left.lastSeenAt ||
