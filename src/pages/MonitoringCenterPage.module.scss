@@ -310,6 +310,50 @@
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24);
 }
 
+.customRangeModalBody {
+  display: grid;
+  gap: 12px;
+}
+
+.customRangeModalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.customRangeModalGrid :global(.form-group) {
+  margin-bottom: 0;
+}
+
+.customRangeModalGrid :global(label) {
+  margin-bottom: 5px;
+  color: var(--monitor-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.customRangeInput {
+  min-height: 38px;
+  border-radius: 14px;
+  font-size: 12px;
+}
+
+.customRangeError {
+  grid-column: 1 / -1;
+  color: var(--monitor-red);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.customRangeModalFooter {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
 .refreshControls {
   display: inline-flex;
   align-items: center;
@@ -1849,5 +1893,11 @@
 
   .realtimeTable {
     min-width: 1180px;
+  }
+}
+
+@media (max-width: 640px) {
+  .customRangeModalGrid {
+    grid-template-columns: 1fr;
   }
 }
