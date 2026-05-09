@@ -1,12 +1,9 @@
 import type { AuthFileItem } from '@/types';
 import {
-  mergeRecentRequestBucketGroups,
   normalizeRecentRequestAuthIndex,
-  normalizeRecentRequestBuckets,
-  statusBarDataFromRecentRequests,
   type StatusBarData,
 } from '@/utils/recentRequests';
-import type { MonitoringAccountRow } from './hooks/useMonitoringData';
+import type { MonitoringAccountRow, MonitoringEventRow } from './hooks/useMonitoringData';
 
 export type MonitoringAccountOverviewMode = 'table' | 'card';
 
@@ -55,7 +52,11 @@ export type MonitoringAccountAuthState = {
   files: AuthFileItem[];
   toggleableFileNames: string[];
   enabledState: MonitoringAccountEnabledState;
-  statusData: StatusBarData;
+};
+
+export type MonitoringStatusRangeBounds = {
+  startMs: number;
+  endMs: number;
 };
 
 const ACCOUNT_SORT_KEYS = [
@@ -271,6 +272,115 @@ const isRuntimeOnlyAuthFile = (file: AuthFileItem) => {
   return false;
 };
 
+const STATUS_BLOCK_COUNT = 20;
+
+const emptyStatusData = (bounds: MonitoringStatusRangeBounds): StatusBarData => {
+  const spanMs = Math.max(bounds.endMs - bounds.startMs + 1, STATUS_BLOCK_COUNT);
+  const blockDetails = Array.from({ length: STATUS_BLOCK_COUNT }, (_, index) => {
+    const blockStartTime = Math.floor(bounds.startMs + (spanMs * index) / STATUS_BLOCK_COUNT);
+    const nextBlockStartTime =
+      index === STATUS_BLOCK_COUNT - 1
+        ? bounds.endMs + 1
+        : Math.floor(bounds.startMs + (spanMs * (index + 1)) / STATUS_BLOCK_COUNT);
+
+    return {
+      success: 0,
+      failure: 0,
+      rate: -1,
+      startTime: blockStartTime,
+      endTime: Math.max(blockStartTime, nextBlockStartTime - 1),
+    };
+  });
+
+  return {
+    blocks: Array.from({ length: STATUS_BLOCK_COUNT }, () => 'idle'),
+    blockDetails,
+    successRate: 100,
+    totalSuccess: 0,
+    totalFailure: 0,
+  };
+};
+
+const clampStatusBucketIndex = (timestampMs: number, bounds: MonitoringStatusRangeBounds) => {
+  const spanMs = Math.max(bounds.endMs - bounds.startMs + 1, 1);
+  const offset = Math.min(Math.max(timestampMs - bounds.startMs, 0), spanMs - 1);
+  return Math.min(
+    STATUS_BLOCK_COUNT - 1,
+    Math.floor((offset * STATUS_BLOCK_COUNT) / spanMs)
+  );
+};
+
+const buildStatusDataForRows = (
+  rows: MonitoringEventRow[],
+  bounds: MonitoringStatusRangeBounds
+): StatusBarData => {
+  const statusData = emptyStatusData(bounds);
+
+  rows.forEach((row) => {
+    if (row.timestampMs < bounds.startMs || row.timestampMs > bounds.endMs) {
+      return;
+    }
+
+    const bucketIndex = clampStatusBucketIndex(row.timestampMs, bounds);
+    const detail = statusData.blockDetails[bucketIndex];
+
+    if (row.failed) {
+      detail.failure += 1;
+      statusData.totalFailure += 1;
+    } else {
+      detail.success += 1;
+      statusData.totalSuccess += 1;
+    }
+  });
+
+  statusData.blocks = statusData.blockDetails.map((detail) => {
+    const total = detail.success + detail.failure;
+    if (total === 0) {
+      detail.rate = -1;
+      return 'idle';
+    }
+
+    detail.rate = detail.success / total;
+    if (detail.failure === 0) return 'success';
+    if (detail.success === 0) return 'failure';
+    return 'mixed';
+  });
+
+  const total = statusData.totalSuccess + statusData.totalFailure;
+  statusData.successRate = total > 0 ? (statusData.totalSuccess / total) * 100 : 100;
+
+  return statusData;
+};
+
+export const buildMonitoringAccountStatusDataMap = (
+  rows: MonitoringEventRow[],
+  bounds: MonitoringStatusRangeBounds | null | undefined
+) => {
+  const grouped = new Map<string, MonitoringEventRow[]>();
+
+  if (!bounds || !Number.isFinite(bounds.startMs) || !Number.isFinite(bounds.endMs)) {
+    return new Map<string, StatusBarData>();
+  }
+
+  rows.forEach((row) => {
+    if (row.timestampMs < bounds.startMs || row.timestampMs > bounds.endMs) {
+      return;
+    }
+
+    const accountKey = row.account || row.authLabel || row.source;
+    const existing = grouped.get(accountKey) ?? [];
+    existing.push(row);
+    grouped.set(accountKey, existing);
+  });
+
+  return new Map(
+    Array.from(grouped.entries()).map(([accountKey, accountRows]) => [
+      accountKey,
+      buildStatusDataForRows(accountRows, bounds),
+    ])
+  );
+};
+
 export const buildMonitoringAccountAuthState = (
   authIndices: string[],
   authFilesByAuthIndex: Map<string, AuthFileItem>
@@ -301,14 +411,9 @@ export const buildMonitoringAccountAuthState = (
           ? 'enabled'
           : 'mixed';
 
-  const mergedRecentRequests = mergeRecentRequestBucketGroups(
-    files.map((file) => normalizeRecentRequestBuckets(file.recent_requests ?? file.recentRequests))
-  );
-
   return {
     files,
     toggleableFileNames: toggleableFiles.map((file) => file.name),
     enabledState,
-    statusData: statusBarDataFromRecentRequests(mergedRecentRequests),
   };
 };

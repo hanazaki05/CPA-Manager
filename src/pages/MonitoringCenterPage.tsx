@@ -35,6 +35,7 @@ import {
   buildAccountRows,
   buildMonitoringSummary,
   buildRealtimeMonitorRows,
+  getRangeBounds,
   type MonitoringAccountRow,
   type MonitoringCustomTimeRange,
   type MonitoringEventRow,
@@ -47,6 +48,7 @@ import {
   ACCOUNT_OVERVIEW_CARD_METRIC_KEYS,
   ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS,
   buildMonitoringAccountAuthState,
+  buildMonitoringAccountStatusDataMap,
   normalizeAccountOverviewPageSize,
   sortAccountRows,
   readAccountOverviewUiState,
@@ -115,6 +117,13 @@ const DEFAULT_CARD_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS[0
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
 const ACCOUNT_OVERVIEW_CARD_METRIC_KEY_SET = new Set<string>(ACCOUNT_OVERVIEW_CARD_METRIC_KEYS);
+const EMPTY_STATUS_BAR_DATA: StatusBarData = {
+  blocks: [],
+  blockDetails: [],
+  successRate: 100,
+  totalSuccess: 0,
+  totalFailure: 0,
+};
 const ACCOUNT_OVERVIEW_CARD_METRIC_ORDER = [
   'estimated-cost',
   'total-tokens',
@@ -737,11 +746,20 @@ const formatStatusRate = (rate: number) => {
   return `${rounded.endsWith('.0') ? rounded.slice(0, -2) : rounded}%`;
 };
 
-const formatStatusTime = (timestamp: number) => {
-  const date = new Date(timestamp);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+const formatStatusWindowLabel = (startTime: number, endTime: number, locale: string) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const sameDay = start.toDateString() === end.toDateString();
+  const dateOptions: Intl.DateTimeFormatOptions = { month: 'numeric', day: 'numeric' };
+  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+  const startDateLabel = start.toLocaleDateString(locale, dateOptions);
+  const endDateLabel = end.toLocaleDateString(locale, dateOptions);
+  const startTimeLabel = start.toLocaleTimeString(locale, timeOptions);
+  const endTimeLabel = end.toLocaleTimeString(locale, timeOptions);
+
+  return sameDay
+    ? `${startDateLabel} ${startTimeLabel} - ${endTimeLabel}`
+    : `${startDateLabel} ${startTimeLabel} - ${endDateLabel} ${endTimeLabel}`;
 };
 
 const rateToStatusColor = (rate: number) => {
@@ -758,9 +776,11 @@ const rateToStatusColor = (rate: number) => {
 
 function MonitoringHealthStatusBar({
   statusData,
+  locale,
   t,
 }: {
   statusData: StatusBarData;
+  locale: string;
   t: TFunction;
 }) {
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
@@ -814,7 +834,7 @@ function MonitoringHealthStatusBar({
 
   const renderTooltip = (detail: StatusBlockDetail, index: number) => {
     const total = detail.success + detail.failure;
-    const timeRange = `${formatStatusTime(detail.startTime)} - ${formatStatusTime(detail.endTime)}`;
+    const timeRange = formatStatusWindowLabel(detail.startTime, detail.endTime, locale);
 
     return (
       <div
@@ -1178,6 +1198,7 @@ function AccountOverviewCard({
   t,
   isExpanded,
   isFocused,
+  statusData,
   quotaState,
   statusUpdating,
   onToggle,
@@ -1192,6 +1213,7 @@ function AccountOverviewCard({
   t: TFunction;
   isExpanded: boolean;
   isFocused: boolean;
+  statusData: StatusBarData;
   quotaState?: AccountQuotaState;
   statusUpdating: boolean;
   onToggle: () => void;
@@ -1319,7 +1341,7 @@ function AccountOverviewCard({
             ) : null}
           </div>
         </div>
-        <MonitoringHealthStatusBar statusData={authState.statusData} t={t} />
+        <MonitoringHealthStatusBar statusData={statusData} locale={locale} t={t} />
       </div>
 
       <div className={styles.accountOverviewMetricGrid}>
@@ -1623,9 +1645,18 @@ export function MonitoringCenterPage() {
     () => scopedRows.filter((row) => row.statsIncluded),
     [scopedRows]
   );
+  const accountStatusNowMs = lastRefreshedAt?.getTime() ?? Date.now();
+  const accountStatusBounds = useMemo(
+    () => getRangeBounds(timeRange, accountStatusNowMs, customTimeRange),
+    [accountStatusNowMs, customTimeRange, timeRange]
+  );
 
   const scopedSummary = useMemo(() => buildMonitoringSummary(scopedStatsRows), [scopedStatsRows]);
   const accountRows = useMemo(() => buildAccountRows(scopedRows), [scopedRows]);
+  const accountStatusDataByRowId = useMemo(
+    () => buildMonitoringAccountStatusDataMap(scopedRows, accountStatusBounds),
+    [accountStatusBounds, scopedRows]
+  );
   const accountAuthStateByRowId = useMemo(
     () =>
       new Map(
@@ -2757,6 +2788,7 @@ export function MonitoringCenterPage() {
                   t={t}
                   isExpanded={Boolean(expandedAccounts[row.id])}
                   isFocused={focusedAccount === row.account}
+                  statusData={accountStatusDataByRowId.get(row.id) ?? EMPTY_STATUS_BAR_DATA}
                   quotaState={accountQuotaStates[row.account]}
                   statusUpdating={accountStatusUpdating[row.id] === true}
                   onToggle={() => toggleAccountExpanded(row.id, row.account)}

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { MonitoringAccountRow } from './hooks/useMonitoringData';
+import type { MonitoringAccountRow, MonitoringEventRow } from './hooks/useMonitoringData';
 import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
   ACCOUNT_OVERVIEW_CARD_METRIC_KEYS,
   DEFAULT_ACCOUNT_SORT,
   buildMonitoringAccountAuthState,
+  buildMonitoringAccountStatusDataMap,
   normalizeAccountOverviewPageSize,
   normalizeAccountOverviewMode,
   normalizeAccountOverviewUiState,
@@ -36,6 +37,42 @@ const createAccountRow = (
   lastSeenAt: overrides.lastSeenAt ?? 0,
   recentPattern: overrides.recentPattern ?? [],
   models: overrides.models ?? [],
+});
+
+const createEventRow = (overrides: Partial<MonitoringEventRow> = {}): MonitoringEventRow => ({
+  id: overrides.id ?? 'row-1',
+  timestamp: overrides.timestamp ?? '2026-05-10T00:00:00.000Z',
+  timestampMs: overrides.timestampMs ?? Date.UTC(2026, 4, 10, 0, 0, 0),
+  dayKey: overrides.dayKey ?? '2026-05-10',
+  hourLabel: overrides.hourLabel ?? '00:00',
+  model: overrides.model ?? 'gpt-4.1',
+  endpoint: overrides.endpoint ?? '/v1/chat/completions',
+  endpointMethod: overrides.endpointMethod ?? 'POST',
+  endpointPath: overrides.endpointPath ?? '/v1/chat/completions',
+  sourceKey: overrides.sourceKey ?? 'source-1',
+  source: overrides.source ?? 'source-1',
+  sourceMasked: overrides.sourceMasked ?? 'source-1',
+  account: overrides.account ?? 'account@example.com',
+  accountMasked: overrides.accountMasked ?? 'acc***@example.com',
+  authIndex: overrides.authIndex ?? '1',
+  authIndexMasked: overrides.authIndexMasked ?? '1',
+  authLabel: overrides.authLabel ?? 'account@example.com',
+  provider: overrides.provider ?? 'codex',
+  planType: overrides.planType ?? 'plus',
+  channel: overrides.channel ?? 'default',
+  channelHost: overrides.channelHost ?? 'localhost',
+  channelDisabled: overrides.channelDisabled ?? false,
+  failed: overrides.failed ?? false,
+  statsIncluded: overrides.statsIncluded ?? true,
+  latencyMs: overrides.latencyMs ?? 120,
+  inputTokens: overrides.inputTokens ?? 10,
+  outputTokens: overrides.outputTokens ?? 5,
+  reasoningTokens: overrides.reasoningTokens ?? 0,
+  cachedTokens: overrides.cachedTokens ?? 0,
+  totalTokens: overrides.totalTokens ?? 15,
+  totalCost: overrides.totalCost ?? 0.1,
+  taskKey: overrides.taskKey ?? 'task-1',
+  searchText: overrides.searchText ?? 'account@example.com codex gpt-4.1 default',
 });
 
 describe('accountOverviewState', () => {
@@ -139,7 +176,51 @@ describe('accountOverviewState', () => {
     expect(result.enabledState).toBe('mixed');
     expect(result.files.map((file) => file.name)).toEqual(['alpha.json', 'beta.json']);
     expect(result.toggleableFileNames).toEqual(['alpha.json', 'beta.json']);
-    expect(result.statusData.totalSuccess).toBe(3);
-    expect(result.statusData.totalFailure).toBe(1);
+  });
+
+  it('builds account health status from filtered monitoring rows within the selected range', () => {
+    const startMs = Date.UTC(2026, 4, 10, 0, 0, 0);
+    const endMs = Date.UTC(2026, 4, 17, 0, 0, 0) - 1;
+    const rows = [
+      createEventRow({
+        id: 'start-success',
+        timestampMs: startMs,
+        failed: false,
+        authIndex: '1',
+      }),
+      createEventRow({
+        id: 'late-failure',
+        timestampMs: endMs,
+        failed: true,
+        authIndex: '1',
+      }),
+      createEventRow({
+        id: 'out-of-range-success',
+        timestampMs: startMs - 60_000,
+        failed: false,
+        authIndex: '1',
+      }),
+      createEventRow({
+        id: 'other-account',
+        timestampMs: startMs + 30 * 60_000,
+        account: 'other@example.com',
+        authLabel: 'other@example.com',
+        authIndex: '2',
+      }),
+    ];
+
+    const result = buildMonitoringAccountStatusDataMap(rows, { startMs, endMs });
+    const accountStatus = result.get('account@example.com');
+    const otherStatus = result.get('other@example.com');
+
+    expect(accountStatus).toBeDefined();
+    expect(accountStatus?.totalSuccess).toBe(1);
+    expect(accountStatus?.totalFailure).toBe(1);
+    expect(accountStatus?.blockDetails).toHaveLength(20);
+    expect(accountStatus?.blockDetails[0]).toMatchObject({ success: 1, failure: 0 });
+    expect(accountStatus?.blockDetails[19]).toMatchObject({ success: 0, failure: 1 });
+
+    expect(otherStatus?.totalSuccess).toBe(1);
+    expect(otherStatus?.totalFailure).toBe(0);
   });
 });

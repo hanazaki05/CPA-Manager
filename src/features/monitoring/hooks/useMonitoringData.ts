@@ -46,7 +46,7 @@ const isValidCustomTimeRange = (
       range.startMs <= range.endMs
   );
 
-const getRangeBounds = (
+export const getRangeBounds = (
   range: MonitoringTimeRange,
   nowMs: number,
   customRange?: MonitoringCustomTimeRange | null
