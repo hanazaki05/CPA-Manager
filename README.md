@@ -11,10 +11,11 @@ Since v6.10.0, CPA no longer includes built-in usage statistics. This project no
 
 ## Panel Preview
 
-![Request monitoring dashboard showing filters, usage KPIs, account summaries, and export/import actions](img/screenshot-20260507-194947.png)
-![Account usage detail with Codex quota bars and model-level cost breakdown](img/screenshot-20260507-195041.png)
-![Realtime monitoring table showing request status, latency, token usage, and cost](img/screenshot-20260507-195154.png)
-![Codex account inspection progress with live probe logs and cleanup recommendations](img/screenshot-20260507-194738.png)
+![Request monitoring dashboard showing filters, usage KPIs, account summaries, and export/import actions](img/screenshot-20260509-105537.png)
+![Account usage summary list showing calls, tokens, costs, and recent request times](img/screenshot-20260509-105706.png)
+![Account usage detail with Codex quota bars and model-level cost breakdown](img/screenshot-20260509-110120.png)
+![Realtime monitoring table showing request status, latency, token usage, and cost](img/screenshot-20260509-105807.png)
+![Codex account inspection progress with live probe logs and cleanup recommendations](img/screenshot-20260509-113713.png)
 
 ## What This Provides
 
