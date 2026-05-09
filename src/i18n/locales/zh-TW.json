@@ -1506,9 +1506,13 @@
           "debug_desc": "啟用詳細的除錯記錄",
           "commercial_mode": "商業模式",
           "commercial_mode_desc": "停用高開銷中介軟體以支援高並行",
+          "usage_statistics_enabled": "啟用用量統計",
+          "usage_statistics_enabled_desc": "允許 CPA 發布請求用量事件，供 Usage Service 持續消費",
           "logging_to_file": "寫入記錄檔",
           "logging_to_file_desc": "將記錄儲存到檔案",
-          "logs_max_size": "記錄檔大小限制（MB）"
+          "logs_max_size": "記錄檔大小限制（MB）",
+          "redis_usage_queue_retention": "用量佇列保留時間（秒）",
+          "redis_usage_queue_retention_hint": "CPA 預設 60 秒，最大 3600 秒；留空使用預設值。請保持 Usage Service 持續執行。"
         },
         "network": {
           "title": "網路設定",
@@ -1618,6 +1622,7 @@
         "validation_blocked": "請先修復表單驗證錯誤再儲存",
         "port_range": "請輸入 1 到 65535 之間的有效連接埠",
         "non_negative_integer": "請輸入非負整數",
+        "retention_seconds_range": "請輸入 0 到 3600 之間的整數",
         "payload_invalid_number": "請輸入有效數字",
         "payload_invalid_boolean": "請選擇 true 或 false",
         "payload_invalid_json": "請輸入有效的 JSON"

@@ -1486,9 +1486,13 @@
           "debug_desc": "启用详细的调试日志",
           "commercial_mode": "商业模式",
           "commercial_mode_desc": "禁用高开销中间件以支持高并发",
+          "usage_statistics_enabled": "启用用量统计",
+          "usage_statistics_enabled_desc": "允许 CPA 发布请求用量事件，供 Usage Service 持续消费",
           "logging_to_file": "写入日志文件",
           "logging_to_file_desc": "将日志保存到文件",
-          "logs_max_size": "日志文件大小限制 (MB)"
+          "logs_max_size": "日志文件大小限制 (MB)",
+          "redis_usage_queue_retention": "用量队列保留时间 (秒)",
+          "redis_usage_queue_retention_hint": "CPA 默认 60 秒，最大 3600 秒；留空使用默认值。请保持 Usage Service 持续运行。"
         },
         "network": {
           "title": "网络配置",
@@ -1598,6 +1602,7 @@
         "validation_blocked": "请先修复表单校验错误再保存",
         "port_range": "请输入 1 到 65535 之间的有效端口",
         "non_negative_integer": "请输入非负整数",
+        "retention_seconds_range": "请输入 0 到 3600 之间的整数",
         "payload_invalid_number": "请输入有效数字",
         "payload_invalid_boolean": "请选择 true 或 false",
         "payload_invalid_json": "请输入有效的 JSON"

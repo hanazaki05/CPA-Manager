@@ -1477,9 +1477,13 @@
           "debug_desc": "Включить подробные отладочные журналы",
           "commercial_mode": "Коммерческий режим",
           "commercial_mode_desc": "Отключить тяжёлое промежуточное ПО для поддержки высокой нагрузки",
+          "usage_statistics_enabled": "Включить статистику использования",
+          "usage_statistics_enabled_desc": "Разрешить CPA публиковать события использования для постоянного потребления Usage Service",
           "logging_to_file": "Журналировать в файл",
           "logging_to_file_desc": "Сохранять журналы в файлы",
-          "logs_max_size": "Максимальный размер файла журнала (МБ)"
+          "logs_max_size": "Максимальный размер файла журнала (МБ)",
+          "redis_usage_queue_retention": "Хранение очереди использования (сек)",
+          "redis_usage_queue_retention_hint": "По умолчанию CPA использует 60 секунд, максимум 3600 секунд. Оставьте пустым для значения по умолчанию. Держите Usage Service запущенным постоянно."
         },
         "network": {
           "title": "Сетевые настройки",
@@ -1589,6 +1593,7 @@
         "validation_blocked": "Исправьте ошибки валидации перед сохранением",
         "port_range": "Введите корректный порт от 1 до 65535",
         "non_negative_integer": "Введите неотрицательное целое число",
+        "retention_seconds_range": "Введите целое число от 0 до 3600",
         "payload_invalid_number": "Введите корректное число",
         "payload_invalid_boolean": "Выберите true или false",
         "payload_invalid_json": "Введите корректный JSON"
