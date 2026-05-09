@@ -9,12 +9,12 @@
   --monitor-muted: var(--text-secondary);
   --monitor-line: var(--border-color);
   --monitor-line-strong: var(--border-primary);
-  --monitor-accent: #3b82f6;
-  --monitor-accent-strong: #2563eb;
-  --monitor-accent-soft: rgba(59, 130, 246, 0.12);
+  --monitor-accent: var(--primary-color);
+  --monitor-accent-strong: var(--primary-active);
+  --monitor-accent-soft: var(--color-primary-light-9);
   --monitor-cyan: #06b6d4;
   --monitor-green: var(--success-color);
-  --monitor-amber: #f59e0b;
+  --monitor-amber: var(--warning-color);
   --monitor-red: var(--error-color);
   color: var(--monitor-ink);
 }
@@ -24,6 +24,28 @@
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pageTitle {
+  margin: 0;
+  color: var(--monitor-ink);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.description {
+  margin: 0;
+  color: var(--monitor-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .loadingOverlay {
@@ -380,6 +402,17 @@
 .accountPanel,
 .realtimePanel {
   background: var(--monitor-surface);
+}
+
+.toolbarControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--monitor-line) 82%, transparent);
 }
 
 .filterGrid {
@@ -1440,6 +1473,7 @@
   }
 
   .segmentedControl,
+  .toolbarControls,
   .refreshCluster,
   .refreshControls {
     width: 100%;

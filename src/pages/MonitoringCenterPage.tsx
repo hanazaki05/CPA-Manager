@@ -1768,16 +1768,30 @@ export function MonitoringCenterPage() {
         </div>
       ) : null}
 
-      <section className={styles.masthead}>
-        <div className={styles.mastheadGlow} aria-hidden="true" />
+      <div className={styles.pageHeader}>
+        <h1 className={styles.pageTitle}>{t('monitoring.title')}</h1>
+        <p className={styles.description}>{t('monitoring.console_subtitle')}</p>
+      </div>
 
-        <div className={styles.mastheadCopy}>
-          <span className={styles.eyebrow}>{t('monitoring.realtime_console_eyebrow')}</span>
-          <h1 className={styles.title}>{t('monitoring.title')}</h1>
-          <p className={styles.subtitle}>{t('monitoring.console_subtitle')}</p>
-        </div>
-
-        <div className={styles.mastheadControls}>
+      <Panel
+        title={t('monitoring.toolbar_title')}
+        subtitle={
+          selectedFiltersCount > 0
+            ? t('monitoring.active_filters_hint', {
+                count: selectedFiltersCount,
+                rows: scopedRows.length,
+              })
+            : t('monitoring.realtime_table_desc')
+        }
+        className={styles.toolbarPanel}
+        extra={
+          <button type="button" className={styles.clearButton} onClick={clearFilters}>
+            <IconSlidersHorizontal size={16} />
+            <span>{t('monitoring.clear_filters')}</span>
+          </button>
+        }
+      >
+        <div className={styles.toolbarControls}>
           <div className={styles.segmentedControl}>
             {TIME_RANGE_OPTIONS.map((option) => (
               <button
@@ -1832,26 +1846,7 @@ export function MonitoringCenterPage() {
             </div>
           </div>
         </div>
-      </section>
 
-      <Panel
-        title={t('monitoring.toolbar_title')}
-        subtitle={
-          selectedFiltersCount > 0
-            ? t('monitoring.active_filters_hint', {
-                count: selectedFiltersCount,
-                rows: scopedRows.length,
-              })
-            : t('monitoring.realtime_table_desc')
-        }
-        className={styles.toolbarPanel}
-        extra={
-          <button type="button" className={styles.clearButton} onClick={clearFilters}>
-            <IconSlidersHorizontal size={16} />
-            <span>{t('monitoring.clear_filters')}</span>
-          </button>
-        }
-      >
         <div className={styles.filterGrid}>
           <Select
             value={selectedAccount}
