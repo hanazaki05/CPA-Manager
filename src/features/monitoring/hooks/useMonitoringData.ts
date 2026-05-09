@@ -36,23 +36,52 @@ const startOfTodayMs = (nowMs: number) => {
   return now.getTime();
 };
 
-const getRangeStartMs = (range: MonitoringTimeRange, nowMs: number) => {
+const isValidCustomTimeRange = (
+  range: MonitoringCustomTimeRange | null | undefined
+): range is MonitoringCustomTimeRange =>
+  Boolean(
+    range &&
+      Number.isFinite(range.startMs) &&
+      Number.isFinite(range.endMs) &&
+      range.startMs <= range.endMs
+  );
+
+const getRangeBounds = (
+  range: MonitoringTimeRange,
+  nowMs: number,
+  customRange?: MonitoringCustomTimeRange | null
+) => {
+  if (range === 'custom') {
+    return isValidCustomTimeRange(customRange)
+      ? { startMs: customRange.startMs, endMs: customRange.endMs }
+      : null;
+  }
+
   const todayStart = startOfTodayMs(nowMs);
 
   switch (range) {
     case 'today':
-      return todayStart;
+      return { startMs: todayStart, endMs: nowMs };
     case '7d':
-      return todayStart - 6 * 24 * 60 * 60 * 1000;
+      return { startMs: todayStart - 6 * 24 * 60 * 60 * 1000, endMs: nowMs };
     case '14d':
-      return todayStart - 13 * 24 * 60 * 60 * 1000;
+      return { startMs: todayStart - 13 * 24 * 60 * 60 * 1000, endMs: nowMs };
     case '30d':
-      return todayStart - 29 * 24 * 60 * 60 * 1000;
+      return { startMs: todayStart - 29 * 24 * 60 * 60 * 1000, endMs: nowMs };
     case 'all':
     default:
-      return Number.NEGATIVE_INFINITY;
+      return { startMs: Number.NEGATIVE_INFINITY, endMs: nowMs };
   }
 };
+
+const shouldUseHourlyTimeline = (
+  range: MonitoringTimeRange,
+  customRange?: MonitoringCustomTimeRange | null
+) =>
+  range === 'today' ||
+  (range === 'custom' &&
+    isValidCustomTimeRange(customRange) &&
+    buildLocalDayKey(customRange.startMs) === buildLocalDayKey(customRange.endMs));
 
 const maskEmailLike = (value: string) => {
   const trimmed = value.trim();
@@ -160,7 +189,12 @@ type MonitoringAuthMeta = {
   updatedAt: string;
 };
 
-export type MonitoringTimeRange = 'today' | '7d' | '14d' | '30d' | 'all';
+export type MonitoringTimeRange = 'today' | '7d' | '14d' | '30d' | 'all' | 'custom';
+
+export type MonitoringCustomTimeRange = {
+  startMs: number;
+  endMs: number;
+};
 
 export type MonitoringStatusTone = 'good' | 'warn' | 'bad';
 
@@ -403,6 +437,7 @@ export interface UseMonitoringDataParams {
   config: Config | null | undefined;
   modelPrices: Record<string, ModelPrice>;
   timeRange: MonitoringTimeRange;
+  customTimeRange?: MonitoringCustomTimeRange | null;
   searchQuery: string;
 }
 
@@ -515,14 +550,16 @@ const normalizeAuthMeta = (entry: AuthFileItem): MonitoringAuthMeta | null => {
 const buildRangeFilteredRows = (
   rows: MonitoringEventRow[],
   timeRange: MonitoringTimeRange,
+  customTimeRange: MonitoringCustomTimeRange | null | undefined,
   searchQuery: string
 ) => {
   const nowMs = Date.now();
-  const startMs = getRangeStartMs(timeRange, nowMs);
+  const bounds = getRangeBounds(timeRange, nowMs, customTimeRange);
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (!bounds) return [];
 
   return rows.filter((row) => {
-    if (row.timestampMs > nowMs || row.timestampMs < startMs) {
+    if (row.timestampMs < bounds.startMs || row.timestampMs > bounds.endMs) {
       return false;
     }
 
@@ -536,9 +573,10 @@ const buildRangeFilteredRows = (
 
 const buildTimeline = (
   rows: MonitoringEventRow[],
-  timeRange: MonitoringTimeRange
+  timeRange: MonitoringTimeRange,
+  customTimeRange?: MonitoringCustomTimeRange | null
 ): { granularity: 'hour' | 'day'; points: MonitoringTimelinePoint[] } => {
-  if (timeRange === 'today') {
+  if (shouldUseHourlyTimeline(timeRange, customTimeRange)) {
     const map = new Map<string, MonitoringTimelinePoint>();
 
     for (let hour = 0; hour < 24; hour += 1) {
@@ -1439,6 +1477,7 @@ export function useMonitoringData({
   config,
   modelPrices,
   timeRange,
+  customTimeRange,
   searchQuery,
 }: UseMonitoringDataParams): UseMonitoringDataReturn {
   const [authFiles, setAuthFiles] = useState<AuthFileItem[]>([]);
@@ -1533,13 +1572,16 @@ export function useMonitoringData({
   }, [authFileMap, authMetaMap, channelByAuthIndex, modelPrices, sourceInfoMap, usage]);
 
   const filteredRows = useMemo(
-    () => buildRangeFilteredRows(allRows, timeRange, searchQuery),
-    [allRows, searchQuery, timeRange]
+    () => buildRangeFilteredRows(allRows, timeRange, customTimeRange, searchQuery),
+    [allRows, customTimeRange, searchQuery, timeRange]
   );
   const statsRows = useMemo(() => filteredRows.filter(shouldIncludeInStats), [filteredRows]);
 
   const summary = useMemo(() => buildMonitoringSummary(statsRows), [statsRows]);
-  const timelineData = useMemo(() => buildTimeline(statsRows, timeRange), [statsRows, timeRange]);
+  const timelineData = useMemo(
+    () => buildTimeline(statsRows, timeRange, customTimeRange),
+    [customTimeRange, statsRows, timeRange]
+  );
   const hourlyDistribution = useMemo(() => buildHourlyDistribution(statsRows), [statsRows]);
   const modelShareRows = useMemo(() => buildModelShareRows(statsRows), [statsRows]);
   const channelRows = useMemo(() => buildChannelRows(statsRows), [statsRows]);
