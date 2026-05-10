@@ -3,7 +3,11 @@ import {
   normalizeRecentRequestAuthIndex,
   type StatusBarData,
 } from '@/utils/recentRequests';
-import type { MonitoringAccountRow, MonitoringEventRow } from './hooks/useMonitoringData';
+import type {
+  MonitoringAccountRow,
+  MonitoringEventRow,
+  MonitoringTimeRange,
+} from './hooks/useMonitoringData';
 
 export type MonitoringAccountOverviewMode = 'table' | 'card';
 
@@ -36,6 +40,10 @@ export const ACCOUNT_OVERVIEW_CARD_METRIC_KEYS = [
   'output-tokens',
   'cached-tokens',
 ] as const;
+const DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION = {
+  page: 1,
+  pageSize: ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS[0],
+} as const;
 
 export const DEFAULT_ACCOUNT_SORT: AccountSortState = {
   key: 'lastSeenAt',
@@ -43,9 +51,25 @@ export const DEFAULT_ACCOUNT_SORT: AccountSortState = {
 };
 
 export type MonitoringAccountEnabledState = 'enabled' | 'disabled' | 'mixed' | 'unavailable';
+export type MonitoringAccountOverviewCardPaginationState = {
+  page: number;
+  pageSize: number;
+};
+export type AccountOverviewPageResetState = {
+  customEndInput: string;
+  customStartInput: string;
+  deferredSearch: string;
+  selectedAccount: string;
+  selectedChannel: string;
+  selectedModel: string;
+  selectedProvider: string;
+  selectedStatus: string;
+  timeRange: MonitoringTimeRange;
+};
 export type MonitoringAccountOverviewUiState = {
   mode: MonitoringAccountOverviewMode;
   sort: AccountSortState;
+  cardPagination: MonitoringAccountOverviewCardPaginationState;
 };
 
 export type MonitoringAccountAuthState = {
@@ -108,23 +132,6 @@ export const normalizeAccountSortState = (value: unknown): AccountSortState => {
   };
 };
 
-export const normalizeAccountOverviewUiState = (
-  value: unknown
-): MonitoringAccountOverviewUiState => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {
-      mode: 'table',
-      sort: DEFAULT_ACCOUNT_SORT,
-    };
-  }
-
-  const record = value as Record<string, unknown>;
-  return {
-    mode: normalizeAccountOverviewMode(record.mode),
-    sort: normalizeAccountSortState(record.sort),
-  };
-};
-
 export const normalizeAccountOverviewPageSize = (
   value: number,
   mode: MonitoringAccountOverviewMode
@@ -135,6 +142,84 @@ export const normalizeAccountOverviewPageSize = (
       : ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS;
   return options.includes(value) ? value : options[0];
 };
+
+const normalizeStoredPage = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 1) {
+    return Math.floor(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      return parsed;
+    }
+  }
+
+  return DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION.page;
+};
+
+export const normalizeAccountOverviewCardPaginationState = (
+  value: unknown
+): MonitoringAccountOverviewCardPaginationState => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    page: normalizeStoredPage(record.page),
+    pageSize: normalizeAccountOverviewPageSize(
+      normalizeStoredPage(record.pageSize),
+      'card'
+    ),
+  };
+};
+
+export const normalizeAccountOverviewUiState = (
+  value: unknown
+): MonitoringAccountOverviewUiState => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      mode: 'table',
+      sort: DEFAULT_ACCOUNT_SORT,
+      cardPagination: { ...DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION },
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    mode: normalizeAccountOverviewMode(record.mode),
+    sort: normalizeAccountSortState(record.sort),
+    cardPagination: normalizeAccountOverviewCardPaginationState(record.cardPagination),
+  };
+};
+
+export const shouldResetAccountOverviewPage = (
+  previous: AccountOverviewPageResetState | null,
+  next: AccountOverviewPageResetState
+) => {
+  if (!previous) {
+    return false;
+  }
+
+  return (
+    previous.customEndInput !== next.customEndInput ||
+    previous.customStartInput !== next.customStartInput ||
+    previous.deferredSearch !== next.deferredSearch ||
+    previous.selectedAccount !== next.selectedAccount ||
+    previous.selectedChannel !== next.selectedChannel ||
+    previous.selectedModel !== next.selectedModel ||
+    previous.selectedProvider !== next.selectedProvider ||
+    previous.selectedStatus !== next.selectedStatus ||
+    previous.timeRange !== next.timeRange
+  );
+};
+
+export const shouldClampAccountOverviewPage = (
+  loading: boolean,
+  currentPage: number,
+  nextPage: number
+) => !loading && currentPage !== nextPage;
 
 const getAccountSortValue = (row: MonitoringAccountRow, key: AccountSortKey) => {
   switch (key) {
@@ -213,6 +298,7 @@ export const readAccountOverviewUiState = (): MonitoringAccountOverviewUiState =
     return {
       mode: 'table',
       sort: DEFAULT_ACCOUNT_SORT,
+      cardPagination: { ...DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION },
     };
   }
 
@@ -228,6 +314,7 @@ export const readAccountOverviewUiState = (): MonitoringAccountOverviewUiState =
   return {
     mode: readAccountOverviewMode(),
     sort: DEFAULT_ACCOUNT_SORT,
+    cardPagination: { ...DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION },
   };
 };
 
@@ -274,7 +361,35 @@ const isRuntimeOnlyAuthFile = (file: AuthFileItem) => {
 
 const STATUS_BLOCK_COUNT = 20;
 
-const emptyStatusData = (bounds: MonitoringStatusRangeBounds): StatusBarData => {
+export const resolveMonitoringStatusRangeBounds = (
+  rows: Pick<MonitoringEventRow, 'timestampMs'>[],
+  bounds: MonitoringStatusRangeBounds | null | undefined
+): MonitoringStatusRangeBounds | null => {
+  if (!bounds || !Number.isFinite(bounds.endMs)) {
+    return null;
+  }
+
+  if (Number.isFinite(bounds.startMs)) {
+    return bounds;
+  }
+
+  const startMs = rows.reduce((earliest, row) => {
+    if (row.timestampMs > bounds.endMs) {
+      return earliest;
+    }
+
+    return Math.min(earliest, row.timestampMs);
+  }, Number.POSITIVE_INFINITY);
+
+  return {
+    startMs: Number.isFinite(startMs) ? startMs : bounds.endMs,
+    endMs: bounds.endMs,
+  };
+};
+
+export const buildEmptyMonitoringStatusData = (
+  bounds: MonitoringStatusRangeBounds
+): StatusBarData => {
   const spanMs = Math.max(bounds.endMs - bounds.startMs + 1, STATUS_BLOCK_COUNT);
   const blockDetails = Array.from({ length: STATUS_BLOCK_COUNT }, (_, index) => {
     const blockStartTime = Math.floor(bounds.startMs + (spanMs * index) / STATUS_BLOCK_COUNT);
@@ -314,7 +429,7 @@ const buildStatusDataForRows = (
   rows: MonitoringEventRow[],
   bounds: MonitoringStatusRangeBounds
 ): StatusBarData => {
-  const statusData = emptyStatusData(bounds);
+  const statusData = buildEmptyMonitoringStatusData(bounds);
 
   rows.forEach((row) => {
     if (row.timestampMs < bounds.startMs || row.timestampMs > bounds.endMs) {
@@ -356,14 +471,15 @@ export const buildMonitoringAccountStatusDataMap = (
   rows: MonitoringEventRow[],
   bounds: MonitoringStatusRangeBounds | null | undefined
 ) => {
+  const resolvedBounds = resolveMonitoringStatusRangeBounds(rows, bounds);
   const grouped = new Map<string, MonitoringEventRow[]>();
 
-  if (!bounds || !Number.isFinite(bounds.startMs) || !Number.isFinite(bounds.endMs)) {
+  if (!resolvedBounds) {
     return new Map<string, StatusBarData>();
   }
 
   rows.forEach((row) => {
-    if (row.timestampMs < bounds.startMs || row.timestampMs > bounds.endMs) {
+    if (row.timestampMs < resolvedBounds.startMs || row.timestampMs > resolvedBounds.endMs) {
       return;
     }
 
@@ -376,7 +492,7 @@ export const buildMonitoringAccountStatusDataMap = (
   return new Map(
     Array.from(grouped.entries()).map(([accountKey, accountRows]) => [
       accountKey,
-      buildStatusDataForRows(accountRows, bounds),
+      buildStatusDataForRows(accountRows, resolvedBounds),
     ])
   );
 };

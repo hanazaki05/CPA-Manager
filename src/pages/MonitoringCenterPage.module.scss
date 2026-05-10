@@ -1699,6 +1699,10 @@
   text-transform: uppercase;
 }
 
+.accountOverviewStatusLabel {
+  display: none;
+}
+
 .accountOverviewToggleActions {
   display: flex;
   align-items: center;
@@ -1760,6 +1764,13 @@
   border: 1px solid color-mix(in srgb, var(--monitor-line) 82%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--monitor-accent) 3%, var(--monitor-surface-elevated));
+}
+
+.accountOverviewStatusSection:hover .accountOverviewStatusLabel,
+.accountOverviewStatusSection:focus-within .accountOverviewStatusLabel,
+.accountOverviewStatusSection:hover .monitoringStatusRatePlaceholder,
+.accountOverviewStatusSection:focus-within .monitoringStatusRatePlaceholder {
+  display: inline-flex;
 }
 
 .accountOverviewStatusHeader,
@@ -1955,6 +1966,10 @@
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.monitoringStatusRatePlaceholder {
+  display: none;
 }
 
 .monitoringStatusRateHigh {

@@ -47,12 +47,17 @@ import {
 import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
   ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS,
+  buildEmptyMonitoringStatusData,
   buildMonitoringAccountAuthState,
   buildMonitoringAccountStatusDataMap,
   normalizeAccountOverviewPageSize,
+  resolveMonitoringStatusRangeBounds,
+  shouldClampAccountOverviewPage,
+  shouldResetAccountOverviewPage,
   sortAccountRows,
   readAccountOverviewUiState,
   writeAccountOverviewUiState,
+  type AccountOverviewPageResetState,
   type AccountSortKey,
   type MonitoringAccountAuthState,
   type AccountSortState,
@@ -118,7 +123,6 @@ const AUTO_REFRESH_OPTIONS = [
 
 const REALTIME_PAGE_SIZE_OPTIONS = [10, 50, 100, 150, 300] as const;
 const DEFAULT_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS[0];
-const DEFAULT_CARD_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS[0];
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
 const EMPTY_STATUS_BAR_DATA: StatusBarData = {
@@ -985,7 +989,15 @@ function MonitoringHealthStatusBar({
           );
         })}
       </div>
-      <span className={[styles.monitoringStatusRate, rateClassName].filter(Boolean).join(' ')}>
+      <span
+        className={[
+          styles.monitoringStatusRate,
+          rateClassName,
+          !hasData ? styles.monitoringStatusRatePlaceholder : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         {hasData ? formatStatusRate(statusData.successRate) : '--'}
       </span>
     </div>
@@ -1482,25 +1494,31 @@ export function MonitoringCenterPage() {
   const [accountQuotaStates, setAccountQuotaStates] = useState<Record<string, AccountQuotaState>>(
     {}
   );
+  const initialAccountOverviewUiState = useRef(readAccountOverviewUiState());
   const [accountOverviewMode, setAccountOverviewMode] = useState<MonitoringAccountOverviewMode>(
-    () => readAccountOverviewUiState().mode
+    initialAccountOverviewUiState.current.mode
   );
   const [accountSort, setAccountSort] = useState<AccountSortState>(
-    () => readAccountOverviewUiState().sort
+    initialAccountOverviewUiState.current.sort
   );
-  const [accountPage, setAccountPage] = useState(1);
+  const [accountPageByMode, setAccountPageByMode] = useState(() => ({
+    table: 1,
+    card: initialAccountOverviewUiState.current.cardPagination.page,
+  }));
   const [accountPageSizeByMode, setAccountPageSizeByMode] = useState(() => ({
     table: DEFAULT_ACCOUNT_PAGE_SIZE,
-    card: DEFAULT_CARD_ACCOUNT_PAGE_SIZE,
+    card: initialAccountOverviewUiState.current.cardPagination.pageSize,
   }));
   const [accountStatusUpdating, setAccountStatusUpdating] = useState<Record<string, boolean>>({});
   const [realtimePage, setRealtimePage] = useState(1);
   const [realtimePageSize, setRealtimePageSize] = useState(DEFAULT_REALTIME_PAGE_SIZE);
   const focusSnapshotRef = useRef<FocusSnapshot | null>(null);
+  const previousAccountPageResetStateRef = useRef<AccountOverviewPageResetState | null>(null);
   const accountQuotaStatesRef = useRef<Record<string, AccountQuotaState>>({});
   const accountQuotaRequestIdsRef = useRef<Record<string, number>>({});
   const usageImportInputRef = useRef<HTMLInputElement | null>(null);
   const deferredSearch = useDeferredValue(searchInput);
+  const accountPage = accountOverviewMode === 'card' ? accountPageByMode.card : accountPageByMode.table;
   const accountPageSize =
     accountOverviewMode === 'card' ? accountPageSizeByMode.card : accountPageSizeByMode.table;
   const customStartMs = useMemo(
@@ -1583,6 +1601,20 @@ export function MonitoringCenterPage() {
     await Promise.all([loadUsage(), refreshMeta(false)]);
   }, [loadUsage, refreshMeta]);
 
+  const setCurrentAccountPage = useCallback(
+    (page: number) => {
+      setAccountPageByMode((previous) => ({
+        ...previous,
+        [accountOverviewMode]: page,
+      }));
+    },
+    [accountOverviewMode]
+  );
+
+  const resetCurrentAccountPage = useCallback(() => {
+    setCurrentAccountPage(1);
+  }, [setCurrentAccountPage]);
+
   useHeaderRefresh(refreshAll);
   useInterval(
     () => {
@@ -1603,8 +1635,12 @@ export function MonitoringCenterPage() {
     writeAccountOverviewUiState({
       mode: accountOverviewMode,
       sort: accountSort,
+      cardPagination: {
+        page: accountPageByMode.card,
+        pageSize: accountPageSizeByMode.card,
+      },
     });
-  }, [accountOverviewMode, accountSort]);
+  }, [accountOverviewMode, accountPageByMode.card, accountPageSizeByMode.card, accountSort]);
 
   const providerOptions = useMemo(
     () => [
@@ -1734,6 +1770,10 @@ export function MonitoringCenterPage() {
     () => buildMonitoringAccountStatusDataMap(scopedRows, accountStatusBounds),
     [accountStatusBounds, scopedRows]
   );
+  const emptyAccountStatusData = useMemo(() => {
+    const resolvedBounds = resolveMonitoringStatusRangeBounds(scopedRows, accountStatusBounds);
+    return resolvedBounds ? buildEmptyMonitoringStatusData(resolvedBounds) : EMPTY_STATUS_BAR_DATA;
+  }, [accountStatusBounds, scopedRows]);
   const accountAuthStateByRowId = useMemo(
     () =>
       new Map(
@@ -1761,21 +1801,54 @@ export function MonitoringCenterPage() {
     () => buildPaginationState(realtimeLogRows, realtimePage, realtimePageSize),
     [realtimeLogRows, realtimePage, realtimePageSize]
   );
+  const accountPageResetState = useMemo<AccountOverviewPageResetState>(
+    () => ({
+      customEndInput,
+      customStartInput,
+      deferredSearch,
+      selectedAccount,
+      selectedChannel,
+      selectedModel,
+      selectedProvider,
+      selectedStatus,
+      timeRange,
+    }),
+    [
+      customEndInput,
+      customStartInput,
+      deferredSearch,
+      selectedAccount,
+      selectedChannel,
+      selectedModel,
+      selectedProvider,
+      selectedStatus,
+      timeRange,
+    ]
+  );
 
   useEffect(() => {
-    setAccountPage(1);
-    setRealtimePage(1);
-  }, [
-    customEndInput,
-    customStartInput,
-    deferredSearch,
-    selectedAccount,
-    selectedChannel,
-    selectedModel,
-    selectedProvider,
-    selectedStatus,
-    timeRange,
-  ]);
+    if (
+      shouldResetAccountOverviewPage(
+        previousAccountPageResetStateRef.current,
+        accountPageResetState
+      )
+    ) {
+      resetCurrentAccountPage();
+      setRealtimePage(1);
+    }
+
+    previousAccountPageResetStateRef.current = accountPageResetState;
+  }, [accountPageResetState, resetCurrentAccountPage]);
+
+  useEffect(() => {
+    if (
+      !shouldClampAccountOverviewPage(overallLoading, accountPage, accountPagination.currentPage)
+    ) {
+      return;
+    }
+
+    setCurrentAccountPage(accountPagination.currentPage);
+  }, [accountPage, accountPagination.currentPage, overallLoading, setCurrentAccountPage]);
 
   const accountQuotaTargetsByAccount = useMemo(() => {
     const grouped = new Map<string, Map<string, AccountQuotaTarget>>();
@@ -2142,8 +2215,8 @@ export function MonitoringCenterPage() {
       ...previous,
       [accountOverviewMode]: normalizeAccountOverviewPageSize(pageSize, accountOverviewMode),
     }));
-    setAccountPage(1);
-  }, [accountOverviewMode]);
+    resetCurrentAccountPage();
+  }, [accountOverviewMode, resetCurrentAccountPage]);
 
   const handleAccountStatusToggle = useCallback(
     async (row: MonitoringAccountRow, enabled: boolean) => {
@@ -2197,7 +2270,7 @@ export function MonitoringCenterPage() {
   }, []);
 
   const handleAccountSortKeyChange = useCallback((key: AccountSortKey) => {
-    setAccountPage(1);
+    resetCurrentAccountPage();
     setAccountSort((previous) =>
       previous.key === key
         ? previous
@@ -2206,18 +2279,18 @@ export function MonitoringCenterPage() {
             direction: 'desc',
           }
     );
-  }, []);
+  }, [resetCurrentAccountPage]);
 
   const handleAccountSortDirectionToggle = useCallback(() => {
-    setAccountPage(1);
+    resetCurrentAccountPage();
     setAccountSort((previous) => ({
       ...previous,
       direction: previous.direction === 'desc' ? 'asc' : 'desc',
     }));
-  }, []);
+  }, [resetCurrentAccountPage]);
 
   const handleAccountSort = useCallback((key: AccountSortKey) => {
-    setAccountPage(1);
+    resetCurrentAccountPage();
     setAccountSort((previous) =>
       previous.key === key
         ? {
@@ -2229,7 +2302,11 @@ export function MonitoringCenterPage() {
             direction: 'desc',
           }
     );
-  }, []);
+  }, [resetCurrentAccountPage]);
+
+  const handleAccountPageChange = useCallback((page: number) => {
+    setCurrentAccountPage(page);
+  }, [setCurrentAccountPage]);
 
   const handlePriceModelChange = useCallback(
     (value: string) => {
@@ -2865,7 +2942,7 @@ export function MonitoringCenterPage() {
                   t={t}
                   isExpanded={Boolean(expandedAccounts[row.id])}
                   isFocused={focusedAccount === row.account}
-                  statusData={accountStatusDataByRowId.get(row.id) ?? EMPTY_STATUS_BAR_DATA}
+                  statusData={accountStatusDataByRowId.get(row.id) ?? emptyAccountStatusData}
                   quotaState={accountQuotaStates[row.account]}
                   statusUpdating={accountStatusUpdating[row.id] === true}
                   onToggle={() => toggleAccountExpanded(row.id, row.account)}
@@ -2889,7 +2966,7 @@ export function MonitoringCenterPage() {
           endItem={accountPagination.endItem}
           pageSize={accountPageSize}
           pageSizeOptions={accountPageSizeOptions}
-          onPageChange={setAccountPage}
+          onPageChange={handleAccountPageChange}
           onPageSizeChange={handleAccountPageSizeChange}
           t={t}
         />

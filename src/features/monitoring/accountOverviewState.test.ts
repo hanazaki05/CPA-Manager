@@ -4,8 +4,11 @@ import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
   ACCOUNT_OVERVIEW_CARD_METRIC_KEYS,
   DEFAULT_ACCOUNT_SORT,
+  buildEmptyMonitoringStatusData,
   buildMonitoringAccountAuthState,
   buildMonitoringAccountStatusDataMap,
+  shouldClampAccountOverviewPage,
+  shouldResetAccountOverviewPage,
   normalizeAccountOverviewPageSize,
   normalizeAccountOverviewMode,
   normalizeAccountOverviewUiState,
@@ -87,15 +90,24 @@ describe('accountOverviewState', () => {
       normalizeAccountOverviewUiState({
         mode: 'card',
         sort: { key: 'totalCost', direction: 'asc' },
+        cardPagination: { page: 3, pageSize: 18 },
       })
     ).toEqual({
       mode: 'card',
       sort: { key: 'totalCost', direction: 'asc' },
+      cardPagination: { page: 3, pageSize: 18 },
     });
 
-    expect(normalizeAccountOverviewUiState({ mode: 'grid', sort: { key: 'bad' } })).toEqual({
+    expect(
+      normalizeAccountOverviewUiState({
+        mode: 'grid',
+        sort: { key: 'bad' },
+        cardPagination: { page: 0, pageSize: 11 },
+      })
+    ).toEqual({
       mode: 'table',
       sort: DEFAULT_ACCOUNT_SORT,
+      cardPagination: { page: 1, pageSize: 9 },
     });
   });
 
@@ -147,6 +159,60 @@ describe('accountOverviewState', () => {
     expect(normalizeAccountOverviewPageSize(10, 'card')).toBe(9);
     expect(normalizeAccountOverviewPageSize(18, 'card')).toBe(18);
     expect(normalizeAccountOverviewPageSize(12, 'table')).toBe(10);
+  });
+
+  it('does not reset persisted card pagination on first load or view-mode switch', () => {
+    const baseState = {
+      customEndInput: '',
+      customStartInput: '',
+      deferredSearch: '',
+      selectedAccount: 'all',
+      selectedChannel: 'all',
+      selectedModel: 'all',
+      selectedProvider: 'all',
+      selectedStatus: 'all',
+      timeRange: 'all' as const,
+    };
+
+    expect(shouldResetAccountOverviewPage(null, baseState)).toBe(false);
+    expect(
+      shouldResetAccountOverviewPage(baseState, {
+        ...baseState,
+      })
+    ).toBe(false);
+  });
+
+  it('resets persisted card pagination when account filters actually change', () => {
+    const previous = {
+      customEndInput: '',
+      customStartInput: '',
+      deferredSearch: '',
+      selectedAccount: 'all',
+      selectedChannel: 'all',
+      selectedModel: 'all',
+      selectedProvider: 'all',
+      selectedStatus: 'all',
+      timeRange: 'all' as const,
+    };
+
+    expect(
+      shouldResetAccountOverviewPage(previous, {
+        ...previous,
+        deferredSearch: 'abc',
+      })
+    ).toBe(true);
+    expect(
+      shouldResetAccountOverviewPage(previous, {
+        ...previous,
+        selectedStatus: 'failed',
+      })
+    ).toBe(true);
+  });
+
+  it('does not clamp restored card pagination while account data is still loading', () => {
+    expect(shouldClampAccountOverviewPage(true, 3, 1)).toBe(false);
+    expect(shouldClampAccountOverviewPage(false, 3, 1)).toBe(true);
+    expect(shouldClampAccountOverviewPage(false, 3, 3)).toBe(false);
   });
 
   it('builds merged auth state for an account card', () => {
@@ -222,5 +288,58 @@ describe('accountOverviewState', () => {
 
     expect(otherStatus?.totalSuccess).toBe(1);
     expect(otherStatus?.totalFailure).toBe(0);
+  });
+
+  it('builds 20 idle buckets for empty account health fallback data', () => {
+    const startMs = Date.UTC(2026, 4, 10, 0, 0, 0);
+    const endMs = Date.UTC(2026, 4, 17, 0, 0, 0) - 1;
+
+    const statusData = buildEmptyMonitoringStatusData({ startMs, endMs });
+
+    expect(statusData.blocks).toHaveLength(20);
+    expect(statusData.blocks.every((block) => block === 'idle')).toBe(true);
+    expect(statusData.blockDetails).toHaveLength(20);
+    expect(
+      statusData.blockDetails.every(
+        (detail) =>
+          detail.success === 0 &&
+          detail.failure === 0 &&
+          detail.rate === -1 &&
+          detail.startTime >= startMs &&
+          detail.endTime <= endMs
+      )
+    ).toBe(true);
+  });
+
+  it('builds account health status for all range by resolving a finite start bound', () => {
+    const startMs = Date.UTC(2026, 4, 10, 0, 0, 0);
+    const endMs = Date.UTC(2026, 4, 17, 0, 0, 0) - 1;
+    const rows = [
+      createEventRow({
+        id: 'start-success',
+        timestampMs: startMs,
+        failed: false,
+        authIndex: '1',
+      }),
+      createEventRow({
+        id: 'late-failure',
+        timestampMs: endMs,
+        failed: true,
+        authIndex: '1',
+      }),
+    ];
+
+    const result = buildMonitoringAccountStatusDataMap(rows, {
+      startMs: Number.NEGATIVE_INFINITY,
+      endMs,
+    });
+    const accountStatus = result.get('account@example.com');
+
+    expect(accountStatus).toBeDefined();
+    expect(accountStatus?.totalSuccess).toBe(1);
+    expect(accountStatus?.totalFailure).toBe(1);
+    expect(accountStatus?.blockDetails).toHaveLength(20);
+    expect(accountStatus?.blockDetails[0]).toMatchObject({ success: 1, failure: 0 });
+    expect(accountStatus?.blockDetails[19]).toMatchObject({ success: 0, failure: 1 });
   });
 });
