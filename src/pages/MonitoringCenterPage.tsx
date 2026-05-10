@@ -48,7 +48,7 @@ import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
   ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS,
   buildEmptyMonitoringStatusData,
-  buildMonitoringAccountAuthState,
+  buildMonitoringAccountAuthStateMap,
   buildMonitoringAccountStatusDataMap,
   normalizeAccountOverviewPageSize,
   resolveMonitoringStatusRangeBounds,
@@ -64,6 +64,10 @@ import {
   type MonitoringAccountOverviewMode,
 } from '@/features/monitoring/accountOverviewState';
 import { sortAccountOverviewCardMetrics } from '@/features/monitoring/accountOverviewCardMetrics';
+import {
+  buildMonitoringAccountQuotaTargetsByAccount,
+  type MonitoringAccountQuotaTarget,
+} from '@/features/monitoring/accountOverviewQuotaTargets';
 import {
   buildMonitoringStatusBlockAriaLabel,
   getNextMonitoringStatusBlockIndex,
@@ -86,12 +90,9 @@ import {
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
   formatCodexResetLabel,
-  isCodexFile,
   normalizeNumberValue,
   normalizePlanType,
   parseCodexUsagePayload,
-  resolveCodexChatgptAccountId,
-  resolveCodexPlanType,
 } from '@/utils/quota';
 import {
   formatCompactNumber,
@@ -182,15 +183,6 @@ type RealtimeLogRow = MonitoringEventRow & {
   successRate: number;
   streamKey: string;
   recentPattern: boolean[];
-};
-
-type AccountQuotaTarget = {
-  key: string;
-  authIndex: string;
-  authLabel: string;
-  fileName: string;
-  accountId: string | null;
-  planType: string | null;
 };
 
 type AccountQuotaWindow = {
@@ -549,7 +541,7 @@ const buildAccountQuotaWindows = (
 };
 
 const requestAccountQuota = async (
-  target: AccountQuotaTarget,
+  target: MonitoringAccountQuotaTarget,
   t: TFunction
 ): Promise<AccountQuotaEntry> => {
   if (!target.accountId) {
@@ -1288,7 +1280,7 @@ function ExpandedAccountCard({
   );
 }
 
-function AccountOverviewCard({
+export function AccountOverviewCard({
   row,
   authState,
   hasPrices,
@@ -1354,35 +1346,14 @@ function AccountOverviewCard({
             </button>
 
             <div className={styles.accountOverviewHeaderToggle}>
-              {authState.enabledState === 'mixed' ? (
-                <>
-                  <button
-                    type="button"
-                    className={styles.inlineActionButton}
-                    onClick={() => onToggleEnabled(true)}
-                    disabled={statusUpdating}
-                  >
-                    {t('monitoring.account_overview_enable_all')}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.inlineActionButton}
-                    onClick={() => onToggleEnabled(false)}
-                    disabled={statusUpdating}
-                  >
-                    {t('monitoring.account_overview_disable_all')}
-                  </button>
-                </>
-              ) : (
-                <ToggleSwitch
-                  ariaLabel={t('monitoring.account_overview_enabled_label')}
-                  checked={toggleChecked}
-                  disabled={!canToggleEnabled || statusUpdating}
-                  onChange={onToggleEnabled}
-                  label={t('auth_files.status_toggle_label')}
-                  labelPosition="left"
-                />
-              )}
+              <ToggleSwitch
+                ariaLabel={t('monitoring.account_overview_enabled_label')}
+                checked={toggleChecked}
+                disabled={!canToggleEnabled || statusUpdating}
+                onChange={onToggleEnabled}
+                label={t('auth_files.status_toggle_label')}
+                labelPosition="left"
+              />
             </div>
           </div>
         </div>
@@ -1775,13 +1746,7 @@ export function MonitoringCenterPage() {
     return resolvedBounds ? buildEmptyMonitoringStatusData(resolvedBounds) : EMPTY_STATUS_BAR_DATA;
   }, [accountStatusBounds, scopedRows]);
   const accountAuthStateByRowId = useMemo(
-    () =>
-      new Map(
-        accountRows.map((row) => [
-          row.id,
-          buildMonitoringAccountAuthState(row.authIndices, authFilesByAuthIndex),
-        ])
-      ),
+    () => buildMonitoringAccountAuthStateMap(accountRows, authFilesByAuthIndex),
     [accountRows, authFilesByAuthIndex]
   );
   const sortedAccountRows = useMemo(
@@ -1850,40 +1815,10 @@ export function MonitoringCenterPage() {
     setCurrentAccountPage(accountPagination.currentPage);
   }, [accountPage, accountPagination.currentPage, overallLoading, setCurrentAccountPage]);
 
-  const accountQuotaTargetsByAccount = useMemo(() => {
-    const grouped = new Map<string, Map<string, AccountQuotaTarget>>();
-
-    scopedRows.forEach((row) => {
-      const authIndex = normalizeAuthIndex(row.authIndex);
-      if (!authIndex || !row.account) return;
-
-      const file = authFilesByAuthIndex.get(authIndex);
-      if (!file || !isCodexFile(file)) return;
-
-      const dedupeKey = `${authIndex}::${file.name}`;
-      const bucket = grouped.get(row.account) ?? new Map<string, AccountQuotaTarget>();
-      if (!bucket.has(dedupeKey)) {
-        bucket.set(dedupeKey, {
-          key: dedupeKey,
-          authIndex,
-          authLabel: row.authLabel || file.name || authIndex,
-          fileName: file.name,
-          accountId: resolveCodexChatgptAccountId(file),
-          planType: resolveCodexPlanType(file),
-        });
-      }
-      grouped.set(row.account, bucket);
-    });
-
-    return new Map(
-      Array.from(grouped.entries()).map(([account, bucket]) => [
-        account,
-        Array.from(bucket.values()).sort((left, right) =>
-          left.authLabel.localeCompare(right.authLabel)
-        ),
-      ])
-    );
-  }, [authFilesByAuthIndex, scopedRows]);
+  const accountQuotaTargetsByAccount = useMemo(
+    () => buildMonitoringAccountQuotaTargetsByAccount(accountRows, accountAuthStateByRowId),
+    [accountAuthStateByRowId, accountRows]
+  );
   const scopedFailureCount = scopedRows.filter((row) => row.failed).length;
   const savedPriceEntries = useMemo(
     () => Object.entries(modelPrices).sort((left, right) => left[0].localeCompare(right[0])),

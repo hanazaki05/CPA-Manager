@@ -6,6 +6,7 @@ import {
   DEFAULT_ACCOUNT_SORT,
   buildEmptyMonitoringStatusData,
   buildMonitoringAccountAuthState,
+  buildMonitoringAccountAuthStateMap,
   buildMonitoringAccountStatusDataMap,
   shouldClampAccountOverviewPage,
   shouldResetAccountOverviewPage,
@@ -242,6 +243,57 @@ describe('accountOverviewState', () => {
     expect(result.enabledState).toBe('mixed');
     expect(result.files.map((file) => file.name)).toEqual(['alpha.json', 'beta.json']);
     expect(result.toggleableFileNames).toEqual(['alpha.json', 'beta.json']);
+  });
+
+  it('builds account auth state from all auth files that belong to the same account', () => {
+    const authFilesByIndex = new Map<string, AuthFileItem>([
+      [
+        '1',
+        {
+          name: 'alpha.json',
+          authIndex: '1',
+          account: 'account@example.com',
+          label: 'Alpha',
+          disabled: false,
+        },
+      ],
+      [
+        '2',
+        {
+          name: 'beta.json',
+          authIndex: '2',
+          account: 'account@example.com',
+          label: 'Beta',
+          disabled: true,
+        },
+      ],
+      [
+        '3',
+        {
+          name: 'other.json',
+          authIndex: '3',
+          account: 'other@example.com',
+          label: 'Other',
+          disabled: false,
+        },
+      ],
+    ]);
+
+    const rows = [
+      createAccountRow({
+        id: 'account@example.com',
+        account: 'account@example.com',
+        authLabels: ['Alpha'],
+        authIndices: ['1'],
+      }),
+    ];
+
+    const result = buildMonitoringAccountAuthStateMap(rows, authFilesByIndex);
+    const accountState = result.get('account@example.com');
+
+    expect(accountState?.files.map((file) => file.name)).toEqual(['alpha.json', 'beta.json']);
+    expect(accountState?.toggleableFileNames).toEqual(['alpha.json', 'beta.json']);
+    expect(accountState?.enabledState).toBe('mixed');
   });
 
   it('builds account health status from filtered monitoring rows within the selected range', () => {

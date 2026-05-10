@@ -497,6 +497,66 @@ export const buildMonitoringAccountStatusDataMap = (
   );
 };
 
+const normalizeAccountIdentityValue = (value: unknown) =>
+  (typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value))
+    .trim()
+    .toLowerCase();
+
+const collectAccountIdentityCandidates = (values: unknown[]) =>
+  Array.from(
+    new Set(values.map((value) => normalizeAccountIdentityValue(value)).filter(Boolean))
+  );
+
+const buildAccountAuthIndicesByIdentity = (authFilesByAuthIndex: Map<string, AuthFileItem>) => {
+  const indicesByIdentity = new Map<string, Set<string>>();
+
+  authFilesByAuthIndex.forEach((file) => {
+    const normalizedAuthIndex = normalizeRecentRequestAuthIndex(file.authIndex ?? file['auth_index']);
+    if (!normalizedAuthIndex) return;
+
+    const candidates = collectAccountIdentityCandidates([
+      file.account,
+      file.email,
+      file.label,
+      file.name,
+    ]);
+
+    candidates.forEach((candidate) => {
+      const existing = indicesByIdentity.get(candidate) ?? new Set<string>();
+      existing.add(normalizedAuthIndex);
+      indicesByIdentity.set(candidate, existing);
+    });
+  });
+
+  return indicesByIdentity;
+};
+
+export const buildMonitoringAccountAuthStateMap = (
+  rows: MonitoringAccountRow[],
+  authFilesByAuthIndex: Map<string, AuthFileItem>
+) => {
+  const authIndicesByIdentity = buildAccountAuthIndicesByIdentity(authFilesByAuthIndex);
+
+  return new Map(
+    rows.map((row) => {
+      const resolvedAuthIndices = collectAccountIdentityCandidates([
+        row.account,
+        row.id,
+        ...row.authLabels,
+      ]).reduce<Set<string>>((set, candidate) => {
+        const authIndices = authIndicesByIdentity.get(candidate);
+        authIndices?.forEach((authIndex) => set.add(authIndex));
+        return set;
+      }, new Set<string>());
+
+      const authIndices =
+        resolvedAuthIndices.size > 0 ? Array.from(resolvedAuthIndices).sort() : row.authIndices;
+
+      return [row.id, buildMonitoringAccountAuthState(authIndices, authFilesByAuthIndex)] as const;
+    })
+  );
+};
+
 export const buildMonitoringAccountAuthState = (
   authIndices: string[],
   authFilesByAuthIndex: Map<string, AuthFileItem>
