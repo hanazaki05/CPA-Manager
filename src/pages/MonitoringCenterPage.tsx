@@ -2,6 +2,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -45,7 +46,6 @@ import {
 } from '@/features/monitoring/hooks/useMonitoringData';
 import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
-  ACCOUNT_OVERVIEW_CARD_METRIC_KEYS,
   ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS,
   buildMonitoringAccountAuthState,
   buildMonitoringAccountStatusDataMap,
@@ -58,6 +58,11 @@ import {
   type AccountSortState,
   type MonitoringAccountOverviewMode,
 } from '@/features/monitoring/accountOverviewState';
+import { sortAccountOverviewCardMetrics } from '@/features/monitoring/accountOverviewCardMetrics';
+import {
+  buildMonitoringStatusBlockAriaLabel,
+  getNextMonitoringStatusBlockIndex,
+} from '@/features/monitoring/healthStatusAccessibility';
 import { MonitoringPanel } from '@/features/monitoring/components/MonitoringPanel';
 import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
@@ -116,7 +121,6 @@ const DEFAULT_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS[0];
 const DEFAULT_CARD_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS[0];
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
-const ACCOUNT_OVERVIEW_CARD_METRIC_KEY_SET = new Set<string>(ACCOUNT_OVERVIEW_CARD_METRIC_KEYS);
 const EMPTY_STATUS_BAR_DATA: StatusBarData = {
   blocks: [],
   blockDetails: [],
@@ -124,16 +128,6 @@ const EMPTY_STATUS_BAR_DATA: StatusBarData = {
   totalSuccess: 0,
   totalFailure: 0,
 };
-const ACCOUNT_OVERVIEW_CARD_METRIC_ORDER = [
-  'estimated-cost',
-  'total-tokens',
-  'input-tokens',
-  'output-tokens',
-  'cached-tokens',
-] as const;
-const ACCOUNT_OVERVIEW_CARD_METRIC_ORDER_MAP = new Map(
-  ACCOUNT_OVERVIEW_CARD_METRIC_ORDER.map((key, index) => [key, index])
-);
 
 const padDateUnit = (value: number) => String(value).padStart(2, '0');
 
@@ -784,7 +778,19 @@ function MonitoringHealthStatusBar({
   t: TFunction;
 }) {
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
+  const [focusIndex, setFocusIndex] = useState(() =>
+    statusData.blockDetails.length > 0 ? 0 : -1
+  );
   const blocksRef = useRef<HTMLDivElement | null>(null);
+  const blockButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tooltipIdPrefix = useId();
+  const blockCount = statusData.blockDetails.length;
+  const resolvedFocusIndex =
+    blockCount === 0 ? -1 : focusIndex >= 0 && focusIndex < blockCount ? focusIndex : 0;
+  const resolvedActiveTooltip =
+    activeTooltip !== null && activeTooltip >= 0 && activeTooltip < blockCount
+      ? activeTooltip
+      : null;
   const hasData = statusData.totalSuccess + statusData.totalFailure > 0;
   const rateClassName = !hasData
     ? ''
@@ -795,7 +801,7 @@ function MonitoringHealthStatusBar({
         : styles.monitoringStatusRateLow;
 
   useEffect(() => {
-    if (activeTooltip === null) return;
+    if (resolvedActiveTooltip === null) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (blocksRef.current && !blocksRef.current.contains(event.target as Node)) {
@@ -805,7 +811,7 @@ function MonitoringHealthStatusBar({
 
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [activeTooltip]);
+  }, [resolvedActiveTooltip]);
 
   const handlePointerEnter = useCallback((event: React.PointerEvent, index: number) => {
     if (event.pointerType === 'mouse') {
@@ -814,7 +820,10 @@ function MonitoringHealthStatusBar({
   }, []);
 
   const handlePointerLeave = useCallback((event: React.PointerEvent) => {
-    if (event.pointerType === 'mouse') {
+    if (
+      event.pointerType === 'mouse' &&
+      (!blocksRef.current || !blocksRef.current.contains(document.activeElement))
+    ) {
       setActiveTooltip(null);
     }
   }, []);
@@ -822,9 +831,51 @@ function MonitoringHealthStatusBar({
   const handlePointerDown = useCallback((event: React.PointerEvent, index: number) => {
     if (event.pointerType === 'touch') {
       event.preventDefault();
+      setFocusIndex(index);
       setActiveTooltip((previous) => (previous === index ? null : index));
     }
   }, []);
+
+  const focusBlock = useCallback((index: number) => {
+    blockButtonRefs.current[index]?.focus();
+    setFocusIndex(index);
+    setActiveTooltip(index);
+  }, []);
+
+  const handleFocus = useCallback((index: number) => {
+    setFocusIndex(index);
+    setActiveTooltip(index);
+  }, []);
+
+  const handleBlur = useCallback((event: React.FocusEvent<HTMLButtonElement>) => {
+    if (blocksRef.current?.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setActiveTooltip(null);
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+      if (event.key === 'Escape') {
+        setActiveTooltip(null);
+        return;
+      }
+
+      const nextIndex = getNextMonitoringStatusBlockIndex(
+        index,
+        event.key,
+        blockCount
+      );
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      focusBlock(nextIndex);
+    },
+    [blockCount, focusBlock]
+  );
 
   const getTooltipPositionClassName = (index: number, total: number) => {
     if (index <= 2) return styles.monitoringStatusTooltipLeft;
@@ -832,12 +883,14 @@ function MonitoringHealthStatusBar({
     return '';
   };
 
-  const renderTooltip = (detail: StatusBlockDetail, index: number) => {
+  const renderTooltip = (detail: StatusBlockDetail, index: number, tooltipId: string) => {
     const total = detail.success + detail.failure;
     const timeRange = formatStatusWindowLabel(detail.startTime, detail.endTime, locale);
 
     return (
       <div
+        id={tooltipId}
+        role="tooltip"
         className={[
           styles.monitoringStatusTooltip,
           getTooltipPositionClassName(index, statusData.blockDetails.length),
@@ -867,10 +920,28 @@ function MonitoringHealthStatusBar({
 
   return (
     <div className={styles.monitoringStatusBar}>
-      <div className={styles.monitoringStatusBlocks} ref={blocksRef}>
+      <div
+        className={styles.monitoringStatusBlocks}
+        ref={blocksRef}
+        role="group"
+        aria-label={t('monitoring.account_overview_health_label')}
+      >
         {statusData.blockDetails.map((detail, index) => {
           const isIdle = detail.rate === -1;
-          const isActive = activeTooltip === index;
+          const isActive = resolvedActiveTooltip === index;
+          const timeRangeLabel = formatStatusWindowLabel(detail.startTime, detail.endTime, locale);
+          const tooltipId = `${tooltipIdPrefix}-monitoring-status-tooltip-${index}`;
+          const ariaLabel = buildMonitoringStatusBlockAriaLabel({
+            detail,
+            timeRangeLabel,
+            successRateValue: formatStatusRate(Math.max(0, detail.rate * 100)),
+            copy: {
+              successLabel: t('stats.success'),
+              failureLabel: t('stats.failure'),
+              noRequestsLabel: t('status_bar.no_requests'),
+              successRateLabel: t('monitoring.success_rate'),
+            },
+          });
 
           return (
             <div
@@ -881,20 +952,35 @@ function MonitoringHealthStatusBar({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onPointerEnter={(event) => handlePointerEnter(event, index)}
-              onPointerLeave={handlePointerLeave}
-              onPointerDown={(event) => handlePointerDown(event, index)}
             >
-              <div
-                className={[
-                  styles.monitoringStatusBlock,
-                  isIdle ? styles.monitoringStatusBlockIdle : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                style={isIdle ? undefined : { backgroundColor: rateToStatusColor(detail.rate) }}
-              />
-              {isActive ? renderTooltip(detail, index) : null}
+              <button
+                ref={(node) => {
+                  blockButtonRefs.current[index] = node;
+                }}
+                type="button"
+                className={styles.monitoringStatusBlockButton}
+                tabIndex={resolvedFocusIndex === index ? 0 : -1}
+                aria-label={ariaLabel}
+                aria-describedby={isActive ? tooltipId : undefined}
+                onFocus={() => handleFocus(index)}
+                onBlur={handleBlur}
+                onKeyDown={(event) => handleKeyDown(event, index)}
+                onPointerEnter={(event) => handlePointerEnter(event, index)}
+                onPointerLeave={handlePointerLeave}
+                onPointerDown={(event) => handlePointerDown(event, index)}
+              >
+                <div
+                  aria-hidden="true"
+                  className={[
+                    styles.monitoringStatusBlock,
+                    isIdle ? styles.monitoringStatusBlockIdle : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={isIdle ? undefined : { backgroundColor: rateToStatusColor(detail.rate) }}
+                />
+              </button>
+              {isActive ? renderTooltip(detail, index, tooltipId) : null}
             </div>
           );
         })}
@@ -1222,17 +1308,8 @@ function AccountOverviewCard({
   onRefreshQuota: () => void;
 }) {
   const summaryMetrics = buildAccountSummaryMetrics(row, hasPrices, locale, t);
-  const cardMetrics = summaryMetrics
-    .filter((metric) => ACCOUNT_OVERVIEW_CARD_METRIC_KEY_SET.has(metric.key))
-    .sort((left, right) => {
-      const leftOrder = ACCOUNT_OVERVIEW_CARD_METRIC_ORDER_MAP.get(
-        left.key as (typeof ACCOUNT_OVERVIEW_CARD_METRIC_ORDER)[number]
-      );
-      const rightOrder = ACCOUNT_OVERVIEW_CARD_METRIC_ORDER_MAP.get(
-        right.key as (typeof ACCOUNT_OVERVIEW_CARD_METRIC_ORDER)[number]
-      );
-      return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
-    });
+  const cardMetrics = sortAccountOverviewCardMetrics(summaryMetrics);
+  // Cost is summarized in the status pills above the grid, not repeated as a card metric.
   const costMetric = summaryMetrics.find((metric) => metric.key === 'estimated-cost');
   const latestMetric = summaryMetrics.find((metric) => metric.key === 'latest-request-time');
   const canToggleEnabled = authState.enabledState !== 'unavailable';
