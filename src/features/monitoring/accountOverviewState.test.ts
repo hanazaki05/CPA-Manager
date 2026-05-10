@@ -296,6 +296,47 @@ describe('accountOverviewState', () => {
     expect(accountState?.enabledState).toBe('mixed');
   });
 
+  it('does not merge auth files from a different account just because labels match', () => {
+    const authFilesByIndex = new Map<string, AuthFileItem>([
+      [
+        '1',
+        {
+          name: 'alpha.json',
+          authIndex: '1',
+          account: 'primary@example.com',
+          label: 'Shared Label',
+          disabled: false,
+        },
+      ],
+      [
+        '2',
+        {
+          name: 'beta.json',
+          authIndex: '2',
+          account: 'secondary@example.com',
+          label: 'Shared Label',
+          disabled: false,
+        },
+      ],
+    ]);
+
+    const rows = [
+      createAccountRow({
+        id: 'primary@example.com',
+        account: 'primary@example.com',
+        authLabels: ['Shared Label'],
+        authIndices: ['1'],
+      }),
+    ];
+
+    const result = buildMonitoringAccountAuthStateMap(rows, authFilesByIndex);
+    const accountState = result.get('primary@example.com');
+
+    expect(accountState?.files.map((file) => file.name)).toEqual(['alpha.json']);
+    expect(accountState?.toggleableFileNames).toEqual(['alpha.json']);
+    expect(accountState?.enabledState).toBe('enabled');
+  });
+
   it('builds account health status from filtered monitoring rows within the selected range', () => {
     const startMs = Date.UTC(2026, 4, 10, 0, 0, 0);
     const endMs = Date.UTC(2026, 4, 17, 0, 0, 0) - 1;

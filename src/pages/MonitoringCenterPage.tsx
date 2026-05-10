@@ -1346,14 +1346,35 @@ export function AccountOverviewCard({
             </button>
 
             <div className={styles.accountOverviewHeaderToggle}>
-              <ToggleSwitch
-                ariaLabel={t('monitoring.account_overview_enabled_label')}
-                checked={toggleChecked}
-                disabled={!canToggleEnabled || statusUpdating}
-                onChange={onToggleEnabled}
-                label={t('auth_files.status_toggle_label')}
-                labelPosition="left"
-              />
+              {authState.enabledState === 'mixed' ? (
+                <>
+                  <button
+                    type="button"
+                    className={styles.inlineActionButton}
+                    onClick={() => onToggleEnabled(true)}
+                    disabled={statusUpdating}
+                  >
+                    {t('monitoring.account_overview_enable_all')}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.inlineActionButton}
+                    onClick={() => onToggleEnabled(false)}
+                    disabled={statusUpdating}
+                  >
+                    {t('monitoring.account_overview_disable_all')}
+                  </button>
+                </>
+              ) : (
+                <ToggleSwitch
+                  ariaLabel={t('monitoring.account_overview_enabled_label')}
+                  checked={toggleChecked}
+                  disabled={!canToggleEnabled || statusUpdating}
+                  onChange={onToggleEnabled}
+                  label={t('auth_files.status_toggle_label')}
+                  labelPosition="left"
+                />
+              )}
             </div>
           </div>
         </div>

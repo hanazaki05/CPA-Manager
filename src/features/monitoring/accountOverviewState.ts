@@ -507,6 +507,23 @@ const collectAccountIdentityCandidates = (values: unknown[]) =>
     new Set(values.map((value) => normalizeAccountIdentityValue(value)).filter(Boolean))
   );
 
+const resolveMonitoringAccountIdentityFromAuthFile = (file: AuthFileItem) => {
+  const normalizedAuthIndex = normalizeRecentRequestAuthIndex(file.authIndex ?? file['auth_index']);
+  if (!normalizedAuthIndex) return null;
+
+  const identity = [
+    file.account,
+    file.email,
+    file.label,
+    file.name,
+    normalizedAuthIndex,
+  ]
+    .map((value) => normalizeAccountIdentityValue(value))
+    .find(Boolean);
+
+  return identity || null;
+};
+
 const buildAccountAuthIndicesByIdentity = (authFilesByAuthIndex: Map<string, AuthFileItem>) => {
   const indicesByIdentity = new Map<string, Set<string>>();
 
@@ -514,18 +531,12 @@ const buildAccountAuthIndicesByIdentity = (authFilesByAuthIndex: Map<string, Aut
     const normalizedAuthIndex = normalizeRecentRequestAuthIndex(file.authIndex ?? file['auth_index']);
     if (!normalizedAuthIndex) return;
 
-    const candidates = collectAccountIdentityCandidates([
-      file.account,
-      file.email,
-      file.label,
-      file.name,
-    ]);
+    const identity = resolveMonitoringAccountIdentityFromAuthFile(file);
+    if (!identity) return;
 
-    candidates.forEach((candidate) => {
-      const existing = indicesByIdentity.get(candidate) ?? new Set<string>();
-      existing.add(normalizedAuthIndex);
-      indicesByIdentity.set(candidate, existing);
-    });
+    const existing = indicesByIdentity.get(identity) ?? new Set<string>();
+    existing.add(normalizedAuthIndex);
+    indicesByIdentity.set(identity, existing);
   });
 
   return indicesByIdentity;
@@ -542,7 +553,6 @@ export const buildMonitoringAccountAuthStateMap = (
       const resolvedAuthIndices = collectAccountIdentityCandidates([
         row.account,
         row.id,
-        ...row.authLabels,
       ]).reduce<Set<string>>((set, candidate) => {
         const authIndices = authIndicesByIdentity.get(candidate);
         authIndices?.forEach((authIndex) => set.add(authIndex));

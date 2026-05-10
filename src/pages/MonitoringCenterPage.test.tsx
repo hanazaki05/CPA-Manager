@@ -24,7 +24,7 @@ const t = ((key: string) => {
 }) as TFunction;
 
 describe('MonitoringCenterPage account card', () => {
-  it('renders a single toggle for mixed account auth state instead of bulk action buttons', () => {
+  it('renders bulk action buttons for mixed account auth state', () => {
     const html = renderToStaticMarkup(
       <AccountOverviewCard
         row={{
@@ -71,8 +71,8 @@ describe('MonitoringCenterPage account card', () => {
       />
     );
 
-    expect(html).not.toContain('Enable all');
-    expect(html).not.toContain('Disable all');
-    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('Enable all');
+    expect(html).toContain('Disable all');
+    expect(html).not.toContain('type="checkbox"');
   });
 });
