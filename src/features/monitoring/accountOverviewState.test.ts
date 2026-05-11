@@ -18,9 +18,7 @@ import {
 } from './accountOverviewState';
 import type { AuthFileItem } from '@/types';
 
-const createAccountRow = (
-  overrides: Partial<MonitoringAccountRow> = {}
-): MonitoringAccountRow => ({
+const createAccountRow = (overrides: Partial<MonitoringAccountRow> = {}): MonitoringAccountRow => ({
   id: overrides.id ?? 'account',
   account: overrides.account ?? 'account@example.com',
   displayAccount: overrides.displayAccount ?? overrides.account ?? 'account@example.com',
@@ -108,7 +106,7 @@ describe('accountOverviewState', () => {
     ).toEqual({
       mode: 'table',
       sort: DEFAULT_ACCOUNT_SORT,
-      cardPagination: { page: 1, pageSize: 9 },
+      cardPagination: { page: 1, pageSize: 12 },
     });
   });
 
@@ -144,6 +142,16 @@ describe('accountOverviewState', () => {
         (row) => row.id
       )
     ).toEqual(['busy', 'slow']);
+
+    expect(
+      sortAccountRows(
+        [
+          createAccountRow({ id: 'weak', account: 'weak@example.com', successRate: 0.75 }),
+          createAccountRow({ id: 'strong', account: 'strong@example.com', successRate: 0.99 }),
+        ],
+        { key: 'successRate', direction: 'desc' }
+      ).map((row) => row.id)
+    ).toEqual(['strong', 'weak']);
   });
 
   it('exposes the requested metric keys for card mode', () => {
@@ -155,11 +163,13 @@ describe('accountOverviewState', () => {
     ]);
   });
 
-  it('uses 3-based page sizes for card mode and normalizes invalid values', () => {
-    expect(ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS).toEqual([9, 12, 18, 24]);
-    expect(normalizeAccountOverviewPageSize(10, 'card')).toBe(9);
+  it('uses card-specific page sizes and normalizes invalid values', () => {
+    expect(ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS).toEqual([12, 18, 24, 36]);
+    expect(normalizeAccountOverviewPageSize(10, 'card')).toBe(12);
     expect(normalizeAccountOverviewPageSize(18, 'card')).toBe(18);
-    expect(normalizeAccountOverviewPageSize(12, 'table')).toBe(10);
+    expect(normalizeAccountOverviewPageSize(12, 'table')).toBe(12);
+    expect(normalizeAccountOverviewPageSize(10, 'table')).toBe(12);
+    expect(normalizeAccountOverviewPageSize(20, 'table')).toBe(20);
   });
 
   it('does not reset persisted card pagination on first load or view-mode switch', () => {

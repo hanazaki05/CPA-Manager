@@ -1,8 +1,5 @@
 import type { AuthFileItem } from '@/types';
-import {
-  normalizeRecentRequestAuthIndex,
-  type StatusBarData,
-} from '@/utils/recentRequests';
+import { normalizeRecentRequestAuthIndex, type StatusBarData } from '@/utils/recentRequests';
 import type {
   MonitoringAccountRow,
   MonitoringEventRow,
@@ -15,6 +12,7 @@ export type AccountSortKey =
   | 'totalCalls'
   | 'successCalls'
   | 'failureCalls'
+  | 'successRate'
   | 'totalTokens'
   | 'inputTokens'
   | 'outputTokens'
@@ -31,8 +29,8 @@ export type AccountSortState = {
 
 export const ACCOUNT_OVERVIEW_MODE_STORAGE_KEY = 'monitoring.accountOverviewMode';
 export const ACCOUNT_OVERVIEW_UI_STATE_STORAGE_KEY = 'monitoring.accountOverviewUiState';
-export const ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
-export const ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS = [9, 12, 18, 24] as const;
+export const ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS = [12, 20, 50, 100] as const;
+export const ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS = [12, 18, 24, 36] as const;
 
 export const ACCOUNT_OVERVIEW_CARD_METRIC_KEYS = [
   'total-tokens',
@@ -87,6 +85,7 @@ const ACCOUNT_SORT_KEYS = [
   'totalCalls',
   'successCalls',
   'failureCalls',
+  'successRate',
   'totalTokens',
   'inputTokens',
   'outputTokens',
@@ -97,24 +96,21 @@ const ACCOUNT_SORT_KEYS = [
 const ACCOUNT_SORT_KEY_SET = new Set<AccountSortKey>(ACCOUNT_SORT_KEYS);
 const ACCOUNT_SORT_DIRECTION_SET = new Set<AccountSortDirection>(['asc', 'desc']);
 
-export const normalizeAccountOverviewMode = (
-  value: unknown
-): MonitoringAccountOverviewMode => (value === 'card' ? 'card' : 'table');
+export const normalizeAccountOverviewMode = (value: unknown): MonitoringAccountOverviewMode =>
+  value === 'card' ? 'card' : 'table';
 
 export const normalizeAccountSortKey = (value: unknown): AccountSortKey | null =>
   typeof value === 'string' && ACCOUNT_SORT_KEY_SET.has(value as AccountSortKey)
     ? (value as AccountSortKey)
     : null;
 
-export const normalizeAccountSortDirection = (
-  value: unknown
-): AccountSortDirection | null =>
+export const normalizeAccountSortDirection = (value: unknown): AccountSortDirection | null =>
   typeof value === 'string' && ACCOUNT_SORT_DIRECTION_SET.has(value as AccountSortDirection)
     ? (value as AccountSortDirection)
     : null;
 
 export const normalizeAccountSortState = (value: unknown): AccountSortState => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return DEFAULT_ACCOUNT_SORT;
   }
 
@@ -161,24 +157,21 @@ const normalizeStoredPage = (value: unknown) => {
 export const normalizeAccountOverviewCardPaginationState = (
   value: unknown
 ): MonitoringAccountOverviewCardPaginationState => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { ...DEFAULT_ACCOUNT_OVERVIEW_CARD_PAGINATION };
   }
 
   const record = value as Record<string, unknown>;
   return {
     page: normalizeStoredPage(record.page),
-    pageSize: normalizeAccountOverviewPageSize(
-      normalizeStoredPage(record.pageSize),
-      'card'
-    ),
+    pageSize: normalizeAccountOverviewPageSize(normalizeStoredPage(record.pageSize), 'card'),
   };
 };
 
 export const normalizeAccountOverviewUiState = (
   value: unknown
 ): MonitoringAccountOverviewUiState => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {
       mode: 'table',
       sort: DEFAULT_ACCOUNT_SORT,
@@ -229,6 +222,8 @@ const getAccountSortValue = (row: MonitoringAccountRow, key: AccountSortKey) => 
       return row.successCalls;
     case 'failureCalls':
       return row.failureCalls;
+    case 'successRate':
+      return row.successRate;
     case 'totalTokens':
       return row.totalTokens;
     case 'inputTokens':
@@ -419,10 +414,7 @@ export const buildEmptyMonitoringStatusData = (
 const clampStatusBucketIndex = (timestampMs: number, bounds: MonitoringStatusRangeBounds) => {
   const spanMs = Math.max(bounds.endMs - bounds.startMs + 1, 1);
   const offset = Math.min(Math.max(timestampMs - bounds.startMs, 0), spanMs - 1);
-  return Math.min(
-    STATUS_BLOCK_COUNT - 1,
-    Math.floor((offset * STATUS_BLOCK_COUNT) / spanMs)
-  );
+  return Math.min(STATUS_BLOCK_COUNT - 1, Math.floor((offset * STATUS_BLOCK_COUNT) / spanMs));
 };
 
 const buildStatusDataForRows = (
@@ -503,21 +495,13 @@ const normalizeAccountIdentityValue = (value: unknown) =>
     .toLowerCase();
 
 const collectAccountIdentityCandidates = (values: unknown[]) =>
-  Array.from(
-    new Set(values.map((value) => normalizeAccountIdentityValue(value)).filter(Boolean))
-  );
+  Array.from(new Set(values.map((value) => normalizeAccountIdentityValue(value)).filter(Boolean)));
 
 const resolveMonitoringAccountIdentityFromAuthFile = (file: AuthFileItem) => {
   const normalizedAuthIndex = normalizeRecentRequestAuthIndex(file.authIndex ?? file['auth_index']);
   if (!normalizedAuthIndex) return null;
 
-  const identity = [
-    file.account,
-    file.email,
-    file.label,
-    file.name,
-    normalizedAuthIndex,
-  ]
+  const identity = [file.account, file.email, file.label, file.name, normalizedAuthIndex]
     .map((value) => normalizeAccountIdentityValue(value))
     .find(Boolean);
 
@@ -528,7 +512,9 @@ const buildAccountAuthIndicesByIdentity = (authFilesByAuthIndex: Map<string, Aut
   const indicesByIdentity = new Map<string, Set<string>>();
 
   authFilesByAuthIndex.forEach((file) => {
-    const normalizedAuthIndex = normalizeRecentRequestAuthIndex(file.authIndex ?? file['auth_index']);
+    const normalizedAuthIndex = normalizeRecentRequestAuthIndex(
+      file.authIndex ?? file['auth_index']
+    );
     if (!normalizedAuthIndex) return;
 
     const identity = resolveMonitoringAccountIdentityFromAuthFile(file);
@@ -550,10 +536,9 @@ export const buildMonitoringAccountAuthStateMap = (
 
   return new Map(
     rows.map((row) => {
-      const resolvedAuthIndices = collectAccountIdentityCandidates([
-        row.account,
-        row.id,
-      ]).reduce<Set<string>>((set, candidate) => {
+      const resolvedAuthIndices = collectAccountIdentityCandidates([row.account, row.id]).reduce<
+        Set<string>
+      >((set, candidate) => {
         const authIndices = authIndicesByIdentity.get(candidate);
         authIndices?.forEach((authIndex) => set.add(authIndex));
         return set;
