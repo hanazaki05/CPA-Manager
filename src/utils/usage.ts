@@ -24,6 +24,16 @@ export interface UsageDetail {
   timestamp: string;
   source: string;
   auth_index: string | number | null;
+  account_snapshot?: string;
+  accountSnapshot?: string;
+  auth_label_snapshot?: string;
+  authLabelSnapshot?: string;
+  auth_file_snapshot?: string;
+  authFileSnapshot?: string;
+  auth_provider_snapshot?: string;
+  authProviderSnapshot?: string;
+  auth_snapshot_at_ms?: number;
+  authSnapshotAtMs?: number;
   latency_ms?: number;
   tokens: UsageTokens;
   failed: boolean;
@@ -65,6 +75,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const toFiniteNumber = (value: unknown): number => {
   const numberValue = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : 0;
+};
+
+const toPositiveNumber = (value: unknown): number | undefined => {
+  const numberValue = toFiniteNumber(value);
+  return numberValue > 0 ? numberValue : undefined;
+};
+
+const readDetailString = (value: unknown): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value).trim();
+  return text || undefined;
 };
 
 const getApisRecord = (usageData: unknown): Record<string, unknown> | null => {
@@ -243,6 +264,19 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
             detailRaw.authIndex ??
             detailRaw.AuthIndex ??
             null) as UsageDetail['auth_index'],
+          account_snapshot: readDetailString(detailRaw.account_snapshot ?? detailRaw.accountSnapshot),
+          auth_label_snapshot: readDetailString(
+            detailRaw.auth_label_snapshot ?? detailRaw.authLabelSnapshot
+          ),
+          auth_file_snapshot: readDetailString(
+            detailRaw.auth_file_snapshot ?? detailRaw.authFileSnapshot
+          ),
+          auth_provider_snapshot: readDetailString(
+            detailRaw.auth_provider_snapshot ?? detailRaw.authProviderSnapshot
+          ),
+          auth_snapshot_at_ms: toPositiveNumber(
+            detailRaw.auth_snapshot_at_ms ?? detailRaw.authSnapshotAtMs
+          ),
           latency_ms: latencyMs ?? undefined,
           tokens: readTokens(detailRaw),
           failed: detailRaw.failed === true,
@@ -295,6 +329,19 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
             detailRaw.authIndex ??
             detailRaw.AuthIndex ??
             null) as UsageDetail['auth_index'],
+          account_snapshot: readDetailString(detailRaw.account_snapshot ?? detailRaw.accountSnapshot),
+          auth_label_snapshot: readDetailString(
+            detailRaw.auth_label_snapshot ?? detailRaw.authLabelSnapshot
+          ),
+          auth_file_snapshot: readDetailString(
+            detailRaw.auth_file_snapshot ?? detailRaw.authFileSnapshot
+          ),
+          auth_provider_snapshot: readDetailString(
+            detailRaw.auth_provider_snapshot ?? detailRaw.authProviderSnapshot
+          ),
+          auth_snapshot_at_ms: toPositiveNumber(
+            detailRaw.auth_snapshot_at_ms ?? detailRaw.authSnapshotAtMs
+          ),
           latency_ms: latencyMs ?? undefined,
           tokens: readTokens(detailRaw),
           failed: detailRaw.failed === true,

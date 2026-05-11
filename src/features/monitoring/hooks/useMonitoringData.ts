@@ -5,6 +5,7 @@ import type { AuthFileItem } from '@/types/authFile';
 import type { Config } from '@/types/config';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
+import { buildLegacyAuthIndexAliases } from '../legacyAuthIndexAliases';
 import {
   calculateCost,
   collectUsageDetailsWithEndpoint,
@@ -545,6 +546,24 @@ const normalizeAuthMeta = (entry: AuthFileItem): MonitoringAuthMeta | null => {
     planType: planType || '-',
     updatedAt: readAuthTimestamp(entry),
   };
+};
+
+export const buildMonitoringAuthMetaMap = (
+  authFiles: AuthFileItem[]
+): Map<string, MonitoringAuthMeta> => {
+  const map = new Map<string, MonitoringAuthMeta>();
+  authFiles.forEach((entry) => {
+    const normalized = normalizeAuthMeta(entry);
+    if (!normalized) return;
+
+    map.set(normalized.authIndex, normalized);
+    buildLegacyAuthIndexAliases(entry).forEach((alias) => {
+      if (!map.has(alias)) {
+        map.set(alias, normalized);
+      }
+    });
+  });
+  return map;
 };
 
 const buildRangeFilteredRows = (
@@ -1353,12 +1372,26 @@ const buildEventRows = (
       const authIndex = normalizeAuthIndex(detail.auth_index) ?? '-';
       const authMeta = authMetaMap.get(authIndex);
       const sourceMeta = resolveSourceDisplay(detail.source, detail.auth_index, sourceInfoMap, authFileMap);
-      const sourceLabel = authMeta?.label || sourceMeta.displayName || authIndex;
+      const snapshotAccount = readString(detail.account_snapshot ?? detail.accountSnapshot);
+      const snapshotLabel = readString(
+        detail.auth_label_snapshot ??
+          detail.authLabelSnapshot ??
+          detail.auth_file_snapshot ??
+          detail.authFileSnapshot
+      );
+      const snapshotProvider = readString(
+        detail.auth_provider_snapshot ?? detail.authProviderSnapshot
+      );
+      const snapshotDisplay = snapshotAccount || snapshotLabel;
+      const sourceLabel = authMeta?.label || snapshotDisplay || sourceMeta.displayName || authIndex;
       const sourceMasked = maskEmailLike(sourceLabel);
-      const account = authMeta?.account || sourceLabel;
+      const account = authMeta?.account || snapshotAccount || sourceLabel;
       const accountMasked = maskEmailLike(account);
-      const channelMeta = channelByAuthIndex.get(authIndex);
-      const channelLabel = channelMeta?.name || authMeta?.provider || sourceMeta.type || '-';
+      const channelMeta =
+        channelByAuthIndex.get(authIndex) ||
+        (authMeta?.authIndex ? channelByAuthIndex.get(authMeta.authIndex) : undefined);
+      const channelLabel =
+        channelMeta?.name || authMeta?.provider || snapshotProvider || sourceMeta.type || '-';
       const endpoint = readString(detail.__endpoint) || '-';
       const endpointMethod = readString(detail.__endpointMethod) || '-';
       const endpointPath = readString(detail.__endpointPath) || endpoint;
@@ -1394,8 +1427,8 @@ const buildEventRows = (
         accountMasked,
         authIndex,
         authIndexMasked: maskAuthIndex(authIndex),
-        authLabel: authMeta?.label || sourceMasked,
-        provider: authMeta?.provider || sourceMeta.type || '-',
+        authLabel: authMeta?.label || snapshotLabel || sourceMasked,
+        provider: authMeta?.provider || snapshotProvider || sourceMeta.type || '-',
         planType: authMeta?.planType || '-',
         channel: channelLabel,
         channelHost: channelMeta?.host || '-',
@@ -1420,7 +1453,7 @@ const buildEventRows = (
           channelMeta?.host,
           endpointPath,
           endpointMethod,
-          authMeta?.provider,
+          authMeta?.provider || snapshotProvider,
           authMeta?.planType
         ),
       } satisfies MonitoringEventRow;
@@ -1514,15 +1547,15 @@ export function useMonitoringData({
     };
   }, [config]);
 
-  const authMetaMap = useMemo(() => {
+  const authMetaMap = useMemo(() => buildMonitoringAuthMetaMap(authFiles), [authFiles]);
+
+  const uniqueAuthMeta = useMemo(() => {
     const map = new Map<string, MonitoringAuthMeta>();
-    authFiles.forEach((entry) => {
-      const normalized = normalizeAuthMeta(entry);
-      if (!normalized) return;
-      map.set(normalized.authIndex, normalized);
+    authMetaMap.forEach((item) => {
+      map.set(item.authIndex, item);
     });
-    return map;
-  }, [authFiles]);
+    return Array.from(map.values());
+  }, [authMetaMap]);
 
   const authFileMap = useMemo(() => {
     const map = new Map<string, CredentialInfo>();
@@ -1592,22 +1625,22 @@ export function useMonitoringData({
 
   const metadata = useMemo<MonitoringMetadata>(() => {
     const planTypes = Array.from(
-      new Set(Array.from(authMetaMap.values()).map((item) => item.planType).filter((item) => item && item !== '-'))
+      new Set(uniqueAuthMeta.map((item) => item.planType).filter((item) => item && item !== '-'))
     ).sort();
 
     return {
       totalAuthFiles: authFiles.length,
-      activeAuthFiles: Array.from(authMetaMap.values()).filter(
+      activeAuthFiles: uniqueAuthMeta.filter(
         (item) => !item.disabled && !item.unavailable && item.status === 'active'
       ).length,
-      unavailableAuthFiles: Array.from(authMetaMap.values()).filter((item) => item.unavailable).length,
-      runtimeOnlyAuthFiles: Array.from(authMetaMap.values()).filter((item) => item.runtimeOnly).length,
+      unavailableAuthFiles: uniqueAuthMeta.filter((item) => item.unavailable).length,
+      runtimeOnlyAuthFiles: uniqueAuthMeta.filter((item) => item.runtimeOnly).length,
       totalChannels: channels.length,
       enabledChannels: channels.filter((item) => !item.disabled).length,
       configuredModels: Array.from(new Set(channels.flatMap((item) => item.modelNames))).length,
       planTypes,
     };
-  }, [authFiles.length, authMetaMap, channels]);
+  }, [authFiles.length, channels, uniqueAuthMeta]);
 
   const statusChips = useMemo(() => buildStatusChips(metadata), [metadata]);
 

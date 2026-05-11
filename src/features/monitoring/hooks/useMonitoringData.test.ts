@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildAccountRows, type MonitoringEventRow } from './useMonitoringData';
+import {
+  buildAccountRows,
+  buildMonitoringAuthMetaMap,
+  type MonitoringEventRow,
+} from './useMonitoringData';
+import type { AuthFileItem } from '@/types';
 
 const createMonitoringEventRow = (
   overrides: Partial<MonitoringEventRow> = {}
@@ -53,5 +58,24 @@ describe('buildAccountRows', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].authIndices).toEqual(['auth-123456', 'auth-999999']);
+  });
+});
+
+describe('buildMonitoringAuthMetaMap', () => {
+  it('maps legacy auth indices to current auth metadata', () => {
+    const authFiles: AuthFileItem[] = [
+      {
+        name: 'alice.json',
+        provider: 'codex',
+        authIndex: 'current-auth-index',
+        path: '/tmp/auths/alice.json',
+        account: 'alice@example.com',
+      },
+    ];
+
+    const map = buildMonitoringAuthMetaMap(authFiles);
+
+    expect(map.get('current-auth-index')?.account).toBe('alice@example.com');
+    expect(map.get('6bf749cb7db0e15c')?.account).toBe('alice@example.com');
   });
 });
