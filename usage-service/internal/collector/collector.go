@@ -37,18 +37,20 @@ type RuntimeConfig struct {
 }
 
 type Manager struct {
-	base       config.Config
-	store      *store.Store
-	mu         sync.Mutex
-	cancel     context.CancelFunc
-	status     Status
-	runtimeCfg RuntimeConfig
+	base             config.Config
+	store            *store.Store
+	snapshotResolver *authSnapshotResolver
+	mu               sync.Mutex
+	cancel           context.CancelFunc
+	status           Status
+	runtimeCfg       RuntimeConfig
 }
 
 func NewManager(base config.Config, store *store.Store) *Manager {
 	return &Manager{
-		base:  base,
-		store: store,
+		base:             base,
+		store:            store,
+		snapshotResolver: newAuthSnapshotResolver(),
 		status: Status{
 			Collector: "stopped",
 			Mode:      collectorMode(base.CollectorMode),
@@ -120,7 +122,7 @@ func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) b
 		if ctx.Err() != nil {
 			return true
 		}
-		err := m.consumeHTTP(ctx, client)
+		err := m.consumeHTTP(ctx, cfg, client)
 		if ctx.Err() != nil {
 			return true
 		}
@@ -170,7 +172,7 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 			status.LastError = ""
 		})
 
-		err = m.consumeRESP(ctx, client, queue, popSide)
+		err = m.consumeRESP(ctx, cfg, client, queue, popSide)
 		_ = client.Close()
 		if ctx.Err() != nil {
 			return
@@ -183,7 +185,7 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 	}
 }
 
-func (m *Manager) consumeHTTP(ctx context.Context, client *httpqueue.Client) error {
+func (m *Manager) consumeHTTP(ctx context.Context, cfg RuntimeConfig, client *httpqueue.Client) error {
 	ticker := time.NewTicker(m.pollInterval())
 	defer ticker.Stop()
 
@@ -208,13 +210,13 @@ func (m *Manager) consumeHTTP(ctx context.Context, client *httpqueue.Client) err
 				continue
 			}
 		}
-		if err := m.processItems(ctx, items); err != nil {
+		if err := m.processItems(ctx, cfg, items); err != nil {
 			return err
 		}
 	}
 }
 
-func (m *Manager) consumeRESP(ctx context.Context, client *resp.Client, queue string, popSide string) error {
+func (m *Manager) consumeRESP(ctx context.Context, cfg RuntimeConfig, client *resp.Client, queue string, popSide string) error {
 	ticker := time.NewTicker(m.pollInterval())
 	defer ticker.Stop()
 
@@ -234,13 +236,13 @@ func (m *Manager) consumeRESP(ctx context.Context, client *resp.Client, queue st
 				continue
 			}
 		}
-		if err := m.processItems(ctx, items); err != nil {
+		if err := m.processItems(ctx, cfg, items); err != nil {
 			return err
 		}
 	}
 }
 
-func (m *Manager) processItems(ctx context.Context, items []string) error {
+func (m *Manager) processItems(ctx context.Context, cfg RuntimeConfig, items []string) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -259,6 +261,7 @@ func (m *Manager) processItems(ctx context.Context, items []string) error {
 		}
 		events = append(events, event)
 	}
+	m.enrichAccountSnapshots(ctx, cfg, events)
 	result, err := m.store.InsertEvents(ctx, events)
 	if err != nil {
 		return err
@@ -271,6 +274,40 @@ func (m *Manager) processItems(ctx context.Context, items []string) error {
 		})
 	}
 	return nil
+}
+
+func (m *Manager) enrichAccountSnapshots(ctx context.Context, cfg RuntimeConfig, events []usage.Event) {
+	if len(events) == 0 || m.snapshotResolver == nil {
+		return
+	}
+	authIndices := make(map[string]struct{})
+	for i := range events {
+		if events[i].AccountSnapshot != "" || events[i].AuthIndex == "" {
+			continue
+		}
+		authIndices[events[i].AuthIndex] = struct{}{}
+	}
+	if len(authIndices) == 0 {
+		return
+	}
+	snapshots := m.snapshotResolver.lookup(ctx, cfg, authIndices)
+	if len(snapshots) == 0 {
+		return
+	}
+	for i := range events {
+		if events[i].AuthIndex == "" || events[i].AccountSnapshot != "" {
+			continue
+		}
+		snapshot, ok := snapshots[events[i].AuthIndex]
+		if !ok {
+			continue
+		}
+		events[i].AccountSnapshot = snapshot.Account
+		events[i].AuthLabelSnapshot = snapshot.Label
+		events[i].AuthFileSnapshot = snapshot.FileName
+		events[i].AuthProviderSnapshot = snapshot.Provider
+		events[i].AuthSnapshotAtMS = snapshot.CapturedAtMS
+	}
 }
 
 func (m *Manager) markError(stage string, err error) {
