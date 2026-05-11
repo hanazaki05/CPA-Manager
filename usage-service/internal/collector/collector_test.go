@@ -17,6 +17,15 @@ import (
 func TestManagerConsumesHTTPUsageQueue(t *testing.T) {
 	var calls int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v0/management/auth-files" {
+			if r.Header.Get("Authorization") != "Bearer management-key" {
+				http.Error(w, "bad key", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"files":[{"auth_index":"auth-1","account":"alice@example.com","label":"Alice","name":"alice.json","provider":"codex"}]}`))
+			return
+		}
 		if r.URL.Path != "/v0/management/usage-queue" {
 			http.NotFound(w, r)
 			return
@@ -31,6 +40,7 @@ func TestManagerConsumesHTTPUsageQueue(t *testing.T) {
 				"timestamp": "2026-05-06T00:00:00Z",
 				"model": "gpt-test",
 				"endpoint": "POST /v1/chat/completions",
+				"auth_index": "auth-1",
 				"input_tokens": 10,
 				"output_tokens": 5
 			}]`))
@@ -62,6 +72,19 @@ func TestManagerConsumesHTTPUsageQueue(t *testing.T) {
 	}
 	if status.TotalInserted != 1 {
 		t.Fatalf("total inserted = %d, want 1", status.TotalInserted)
+	}
+	events, err := db.RecentEvents(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("recent events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].AccountSnapshot != "alice@example.com" {
+		t.Fatalf("account snapshot = %q", events[0].AccountSnapshot)
+	}
+	if events[0].AuthLabelSnapshot != "Alice" {
+		t.Fatalf("auth label snapshot = %q", events[0].AuthLabelSnapshot)
 	}
 }
 

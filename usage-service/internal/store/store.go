@@ -93,6 +93,11 @@ func (s *Store) init() error {
 			source text,
 			source_hash text,
 			api_key_hash text,
+			account_snapshot text,
+			auth_label_snapshot text,
+			auth_file_snapshot text,
+			auth_provider_snapshot text,
+			auth_snapshot_at_ms integer,
 			input_tokens integer not null default 0,
 			output_tokens integer not null default 0,
 			reasoning_tokens integer not null default 0,
@@ -134,6 +139,58 @@ func (s *Store) init() error {
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
+			return err
+		}
+	}
+	if err := s.ensureUsageEventSnapshotColumns(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) ensureUsageEventSnapshotColumns() error {
+	rows, err := s.db.Query(`pragma table_info(usage_events)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existing := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		existing[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "account_snapshot", definition: "text"},
+		{name: "auth_label_snapshot", definition: "text"},
+		{name: "auth_file_snapshot", definition: "text"},
+		{name: "auth_provider_snapshot", definition: "text"},
+		{name: "auth_snapshot_at_ms", definition: "integer"},
+	}
+	for _, column := range columns {
+		if _, ok := existing[column.name]; ok {
+			continue
+		}
+		if _, err := s.db.Exec(fmt.Sprintf(
+			`alter table usage_events add column %s %s`,
+			column.name,
+			column.definition,
+		)); err != nil {
 			return err
 		}
 	}
@@ -360,9 +417,10 @@ func (s *Store) InsertEvents(ctx context.Context, events []usage.Event) (InsertR
 	stmt, err := tx.PrepareContext(ctx, `insert or ignore into usage_events (
 		request_id, event_hash, timestamp_ms, timestamp, provider, model, endpoint, method, path,
 		auth_type, auth_index, source, source_hash, api_key_hash,
+		account_snapshot, auth_label_snapshot, auth_file_snapshot, auth_provider_snapshot, auth_snapshot_at_ms,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_tokens, total_tokens,
 		latency_ms, failed, raw_json, created_at_ms
-	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return InsertResult{}, err
 	}
@@ -390,6 +448,11 @@ func (s *Store) InsertEvents(ctx context.Context, events []usage.Event) (InsertR
 			nullString(event.Source),
 			nullString(event.SourceHash),
 			nullString(event.APIKeyHash),
+			nullString(event.AccountSnapshot),
+			nullString(event.AuthLabelSnapshot),
+			nullString(event.AuthFileSnapshot),
+			nullString(event.AuthProviderSnapshot),
+			nullPositiveInt64(event.AuthSnapshotAtMS),
 			event.InputTokens,
 			event.OutputTokens,
 			event.ReasoningTokens,
@@ -435,6 +498,7 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 	rows, err := s.db.QueryContext(ctx, `select
 		request_id, event_hash, timestamp_ms, timestamp, provider, model, endpoint, method, path,
 		auth_type, auth_index, source, source_hash, api_key_hash,
+		account_snapshot, auth_label_snapshot, auth_file_snapshot, auth_provider_snapshot, auth_snapshot_at_ms,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_tokens, total_tokens,
 		latency_ms, failed, raw_json, created_at_ms
 		from usage_events
@@ -448,7 +512,8 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 	events := make([]usage.Event, 0)
 	for rows.Next() {
 		var event usage.Event
-		var requestID, provider, endpoint, method, path, authType, authIndex, source, sourceHash, apiKeyHash, rawJSON sql.NullString
+		var requestID, provider, endpoint, method, path, authType, authIndex, source, sourceHash, apiKeyHash, accountSnapshot, authLabelSnapshot, authFileSnapshot, authProviderSnapshot, rawJSON sql.NullString
+		var authSnapshotAt sql.NullInt64
 		var latency sql.NullInt64
 		var failed int
 		if err := rows.Scan(
@@ -466,6 +531,11 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 			&source,
 			&sourceHash,
 			&apiKeyHash,
+			&accountSnapshot,
+			&authLabelSnapshot,
+			&authFileSnapshot,
+			&authProviderSnapshot,
+			&authSnapshotAt,
 			&event.InputTokens,
 			&event.OutputTokens,
 			&event.ReasoningTokens,
@@ -489,6 +559,13 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 		event.Source = source.String
 		event.SourceHash = sourceHash.String
 		event.APIKeyHash = apiKeyHash.String
+		event.AccountSnapshot = accountSnapshot.String
+		event.AuthLabelSnapshot = authLabelSnapshot.String
+		event.AuthFileSnapshot = authFileSnapshot.String
+		event.AuthProviderSnapshot = authProviderSnapshot.String
+		if authSnapshotAt.Valid {
+			event.AuthSnapshotAtMS = authSnapshotAt.Int64
+		}
 		event.RawJSON = rawJSON.String
 		event.Failed = failed != 0
 		if latency.Valid {
@@ -539,6 +616,13 @@ func nullInt(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+func nullPositiveInt64(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
 }
 
 func (s Setup) String() string {
