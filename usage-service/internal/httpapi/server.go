@@ -31,7 +31,15 @@ type Server struct {
 	startedAt int64
 }
 
+type setupSource string
+
 const serviceID = "cpa-manager"
+
+const (
+	setupSourceNone setupSource = ""
+	setupSourceEnv  setupSource = "env"
+	setupSourceDB   setupSource = "db"
+)
 
 const maxUsageImportBytes int64 = 64 * 1024 * 1024
 
@@ -169,18 +177,31 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("cpaBaseUrl and managementKey are required"))
 		return
 	}
-	if existing, ok, err := s.resolveSetup(r.Context()); err != nil {
+	managementAPIValidated := false
+	if existing, source, ok, err := s.resolveSetupWithSource(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
+		return
+	} else if source == setupSourceEnv && setupDiffers(existing, req) {
+		writeError(w, http.StatusConflict, errors.New("setup is managed by environment variables"))
 		return
 	} else if ok && existing.ManagementKey != "" &&
 		!authMatches(r, existing.ManagementKey) &&
 		req.ManagementKey != existing.ManagementKey {
-		writeError(w, http.StatusUnauthorized, errors.New("invalid management key for existing setup"))
-		return
+		if normalizeBaseURL(existing.CPAUpstreamURL) != req.CPAUpstreamURL {
+			writeError(w, http.StatusUnauthorized, errors.New("invalid management key for existing setup"))
+			return
+		}
+		if err := validateManagementAPI(r.Context(), req.CPAUpstreamURL, req.ManagementKey); err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		managementAPIValidated = true
 	}
-	if err := validateManagementAPI(r.Context(), req.CPAUpstreamURL, req.ManagementKey); err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
+	if !managementAPIValidated {
+		if err := validateManagementAPI(r.Context(), req.CPAUpstreamURL, req.ManagementKey); err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
 	}
 	setup := store.Setup{
 		CPAUpstreamURL: req.CPAUpstreamURL,
@@ -566,15 +587,31 @@ func (s *Server) handlePanel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveSetup(ctx context.Context) (store.Setup, bool, error) {
+	setup, _, ok, err := s.resolveSetupWithSource(ctx)
+	return setup, ok, err
+}
+
+func (s *Server) resolveSetupWithSource(ctx context.Context) (store.Setup, setupSource, bool, error) {
 	if s.cfg.CPAUpstreamURL != "" && s.cfg.ManagementKey != "" {
 		return store.Setup{
 			CPAUpstreamURL: normalizeBaseURL(s.cfg.CPAUpstreamURL),
 			ManagementKey:  s.cfg.ManagementKey,
 			Queue:          s.cfg.Queue,
 			PopSide:        s.cfg.PopSide,
-		}, true, nil
+		}, setupSourceEnv, true, nil
 	}
-	return s.store.LoadSetup(ctx)
+	setup, ok, err := s.store.LoadSetup(ctx)
+	if !ok || err != nil {
+		return setup, setupSourceNone, ok, err
+	}
+	return setup, setupSourceDB, true, nil
+}
+
+func setupDiffers(existing store.Setup, req setupRequest) bool {
+	return normalizeBaseURL(existing.CPAUpstreamURL) != req.CPAUpstreamURL ||
+		existing.ManagementKey != req.ManagementKey ||
+		existing.Queue != req.Queue ||
+		existing.PopSide != req.PopSide
 }
 
 func (s *Server) authorizeIfConfigured(w http.ResponseWriter, r *http.Request) bool {
