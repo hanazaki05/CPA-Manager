@@ -55,6 +55,27 @@ func newTestHandler(t *testing.T, upstreamURL string, saveSetup bool) http.Handl
 	return New(cfg, db, manager).Handler()
 }
 
+func newTestHandlerWithConfig(t *testing.T, cfg config.Config) http.Handler {
+	t.Helper()
+
+	if cfg.DBPath == "" {
+		cfg.DBPath = filepath.Join(t.TempDir(), "usage.sqlite")
+	}
+	if len(cfg.CORSOrigins) == 0 {
+		cfg.CORSOrigins = []string{"*"}
+	}
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	manager := collector.NewManager(cfg, db)
+	return New(cfg, db, manager).Handler()
+}
+
 func TestModelListProxyPreservesAuthorization(t *testing.T) {
 	for _, path := range []string{"/v1/models", "/models"} {
 		t.Run(path, func(t *testing.T) {
@@ -193,6 +214,124 @@ func TestModelListProxyRequiresSetup(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 	if !strings.Contains(rr.Body.String(), "usage service is not configured") {
+		t.Fatalf("response body = %s", rr.Body.String())
+	}
+}
+
+func TestSetupRejectsDifferentUpstreamWithoutExistingAuthorization(t *testing.T) {
+	currentUpstream := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(currentUpstream.Close)
+
+	nextValidationCalled := make(chan struct{}, 1)
+	nextUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case nextValidationCalled <- struct{}{}:
+		default:
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(nextUpstream.Close)
+
+	handler := newTestHandler(t, currentUpstream.URL, true)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/setup",
+		bytes.NewBufferString(`{"cpaBaseUrl":"`+nextUpstream.URL+`","managementKey":"rotated-key"}`),
+	)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("setup status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	select {
+	case <-nextValidationCalled:
+		t.Fatal("new upstream should not be validated without existing setup authorization")
+	default:
+	}
+}
+
+func TestSetupAllowsKeyRotationForSameUpstreamWithValidNewKey(t *testing.T) {
+	observed := make(chan observedRequest, 10)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v0/management/config" {
+			observed <- observedRequest{
+				path: r.URL.Path,
+				auth: r.Header.Get("Authorization"),
+			}
+		}
+		if r.URL.Path == "/v0/management/config" && r.Header.Get("Authorization") == "Bearer rotated-key" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	t.Cleanup(upstream.Close)
+
+	handler := newTestHandler(t, upstream.URL, true)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/setup",
+		bytes.NewBufferString(`{"cpaBaseUrl":"`+upstream.URL+`","managementKey":"rotated-key"}`),
+	)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("setup status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	got := <-observed
+	if got.path != "/v0/management/config" {
+		t.Fatalf("validation path = %q", got.path)
+	}
+	if got.auth != "Bearer rotated-key" {
+		t.Fatalf("validation authorization = %q", got.auth)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/status", nil)
+	req.Header.Set("Authorization", "Bearer rotated-key")
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status after rotation = %d, body = %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSetupRejectsKeyRotationWhenSetupIsEnvironmentManaged(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v0/management/config" && r.Header.Get("Authorization") == "Bearer rotated-key" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	t.Cleanup(upstream.Close)
+
+	handler := newTestHandlerWithConfig(t, config.Config{
+		CPAUpstreamURL: upstream.URL,
+		ManagementKey:  "env-key",
+		Queue:          "usage",
+		PopSide:        "right",
+	})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/setup",
+		bytes.NewBufferString(`{"cpaBaseUrl":"`+upstream.URL+`","managementKey":"rotated-key"}`),
+	)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("setup status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "environment") {
 		t.Fatalf("response body = %s", rr.Body.String())
 	}
 }
