@@ -535,6 +535,13 @@
   margin-bottom: 16px;
 }
 
+.panelHeaderCopy {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 0;
+  min-width: 0;
+}
+
 .panelTitle {
   margin: 0;
   font-size: 19px;
@@ -551,6 +558,70 @@
 
 .panelExtra {
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.accountOverviewHeaderActions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.accountOverviewModeToggle {
+  width: auto;
+}
+
+.accountOverviewSortBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accountOverviewSortLabel {
+  color: var(--monitor-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.accountOverviewSortSelect {
+  width: 172px;
+  flex: 0 0 auto;
+}
+
+.accountOverviewSortSelectTrigger {
+  min-width: 132px;
+  height: 36px !important;
+  padding: 0 2px 0 10px !important;
+  border-radius: 999px !important;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accountOverviewSortDirectionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--monitor-line);
+  border-radius: 999px;
+  background: var(--monitor-surface-elevated);
+  color: var(--monitor-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.accountOverviewSortDirectionButton:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--monitor-accent) 35%, var(--monitor-line-strong));
+  background: var(--monitor-surface-hover);
 }
 
 .toolbarPanel,
@@ -596,17 +667,26 @@
 }
 
 .filterSearchRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
 }
 
-.filterSearchRow :global(.form-group) {
-  flex: 1 1 520px;
+.filterSearchInputWrap,
+.filterSearchAction {
+  min-width: 0;
+}
+
+.filterSearchInputWrap :global(.form-group) {
   min-width: min(100%, 360px);
   margin-bottom: 0;
+}
+
+.filterSearchAction {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .filterChip {
@@ -656,6 +736,15 @@
 
 .quickLinkRow {
   justify-content: flex-end;
+}
+
+.realtimeHeaderActions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.realtimeHeaderActions > * {
+  max-width: 100%;
 }
 
 .inlineMetrics span {
@@ -1500,6 +1589,439 @@
   min-width: 0;
 }
 
+.accountOverviewCardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.accountOverviewCard {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 84%, transparent);
+  border-radius: 22px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--monitor-accent) 3%, var(--monitor-surface)) 0%,
+      var(--monitor-surface) 100%
+    );
+  box-shadow: var(--shadow);
+}
+
+.accountOverviewCardExpanded {
+  border-color: color-mix(in srgb, var(--monitor-accent) 26%, var(--monitor-line));
+}
+
+.accountOverviewCardFocused {
+  border-color: color-mix(in srgb, var(--monitor-accent) 42%, var(--monitor-line));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--monitor-accent) 18%, transparent),
+    var(--shadow-lg);
+}
+
+.accountOverviewCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.accountOverviewCardPrimary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.accountOverviewCardTimestamp {
+  color: var(--monitor-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.accountOverviewCardActions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.accountOverviewCardActionStack {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.accountOverviewHeaderToggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accountOverviewToggleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 82%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 84%, var(--monitor-surface));
+}
+
+.accountOverviewToggleMeta,
+.accountOverviewToggleMetaRow {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.accountOverviewToggleMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accountOverviewToggleLabel,
+.accountOverviewStatusLabel {
+  color: var(--monitor-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.accountOverviewStatusLabel {
+  display: none;
+}
+
+.accountOverviewToggleActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accountOverviewEnabledStateBadge,
+.accountOverviewLinkedFilesMeta,
+.accountOverviewStatusPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.accountOverviewEnabledStateBadge {
+  border: 1px solid transparent;
+}
+
+.accountOverviewEnabledStateEnabled {
+  color: var(--success-badge-text, #065f46);
+  background: var(--success-badge-bg, #d1fae5);
+  border-color: var(--success-badge-border, #6ee7b7);
+}
+
+.accountOverviewEnabledStateDisabled {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-tertiary) 84%, transparent);
+  border-color: var(--monitor-line);
+}
+
+.accountOverviewEnabledStateMixed {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.accountOverviewEnabledStateUnavailable {
+  color: var(--monitor-muted);
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 82%, var(--monitor-surface));
+  border-color: color-mix(in srgb, var(--monitor-line) 90%, transparent);
+}
+
+.accountOverviewLinkedFilesMeta {
+  color: var(--monitor-muted);
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 82%, var(--monitor-surface));
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 90%, transparent);
+}
+
+.accountOverviewStatusSection {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 82%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--monitor-accent) 3%, var(--monitor-surface-elevated));
+}
+
+.accountOverviewStatusSection:hover .accountOverviewStatusLabel,
+.accountOverviewStatusSection:focus-within .accountOverviewStatusLabel,
+.accountOverviewStatusSection:hover .monitoringStatusRatePlaceholder,
+.accountOverviewStatusSection:focus-within .monitoringStatusRatePlaceholder {
+  display: inline-flex;
+}
+
+.accountOverviewStatusHeader,
+.accountOverviewStatusPills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accountOverviewStatusHeader {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.accountOverviewStatusPills {
+  justify-content: flex-start;
+}
+
+.accountOverviewStatusPillSuccess {
+  color: var(--success-badge-text, #065f46);
+  background: var(--success-badge-bg, #d1fae5);
+}
+
+.accountOverviewStatusPillFailure {
+  color: var(--failure-badge-text, #7f1d1d);
+  background: var(--failure-badge-bg, #fee2e2);
+}
+
+.accountOverviewStatusPillCost {
+  color: var(--monitor-accent-strong);
+  background: color-mix(in srgb, var(--monitor-accent) 10%, var(--monitor-surface));
+  border: 1px solid color-mix(in srgb, var(--monitor-accent) 20%, transparent);
+}
+
+.accountOverviewStatusPillNeutral {
+  color: var(--monitor-ink);
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 84%, var(--monitor-surface));
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 90%, transparent);
+}
+
+.monitoringStatusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.monitoringStatusBlocks {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  min-width: 180px;
+  position: relative;
+}
+
+.monitoringStatusBlockWrapper {
+  flex: 1;
+  min-width: 6px;
+  position: relative;
+}
+
+.monitoringStatusBlockButton {
+  width: 100%;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.monitoringStatusBlockButton:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--monitor-accent) 78%, white);
+  outline-offset: 2px;
+}
+
+.monitoringStatusBlockActive .monitoringStatusBlock,
+.monitoringStatusBlockButton:hover .monitoringStatusBlock,
+.monitoringStatusBlockButton:focus-visible .monitoringStatusBlock {
+  transform: scaleY(1.8);
+  opacity: 0.9;
+}
+
+.monitoringStatusBlock {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.monitoringStatusBlockIdle {
+  background-color: var(--border-secondary, #e5e7eb);
+}
+
+.monitoringStatusTooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 6px 10px;
+  border: 1px solid var(--monitor-line);
+  border-radius: 8px;
+  background: var(--monitor-surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--monitor-ink);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.monitoringStatusTooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--monitor-surface);
+}
+
+.monitoringStatusTooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--monitor-line);
+}
+
+.monitoringStatusTooltipLeft {
+  left: 0;
+  transform: translateX(0);
+}
+
+.monitoringStatusTooltipLeft::after,
+.monitoringStatusTooltipLeft::before {
+  left: 8px;
+  transform: none;
+}
+
+.monitoringStatusTooltipRight {
+  left: auto;
+  right: 0;
+  transform: translateX(0);
+}
+
+.monitoringStatusTooltipRight::after,
+.monitoringStatusTooltipRight::before {
+  left: auto;
+  right: 8px;
+  transform: none;
+}
+
+.monitoringTooltipTime {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--monitor-muted);
+}
+
+.monitoringTooltipStats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.monitoringTooltipSuccess {
+  color: var(--success-color, #22c55e);
+}
+
+.monitoringTooltipFailure {
+  color: var(--error-color, #ef4444);
+}
+
+.monitoringTooltipRate {
+  color: var(--monitor-muted);
+}
+
+.monitoringStatusRate {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 88%, var(--monitor-surface));
+  color: var(--monitor-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.monitoringStatusRatePlaceholder {
+  display: none;
+}
+
+.monitoringStatusRateHigh {
+  color: var(--success-badge-text, #065f46);
+  background: var(--success-badge-bg, #d1fae5);
+}
+
+.monitoringStatusRateMedium {
+  color: var(--warning-text, #92400e);
+  background: var(--warning-bg, #fef3c7);
+}
+
+.monitoringStatusRateLow {
+  color: var(--failure-badge-text, #7f1d1d);
+  background: var(--failure-badge-bg, #fee2e2);
+}
+
+.accountOverviewMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.accountOverviewMetricCard {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--monitor-line) 80%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--monitor-surface-elevated) 88%, var(--monitor-surface));
+}
+
+.accountOverviewMetricLabel {
+  color: var(--monitor-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.accountOverviewMetricValue {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.accountOverviewCardBody {
+  padding-top: 2px;
+  min-width: 0;
+}
+
 .expandPanel {
   display: grid;
   gap: 16px;
@@ -1735,14 +2257,6 @@
   }
 }
 
-@container monitoring-page (max-width: 1440px) {
-  .summaryHero,
-  .summarySub,
-  .summaryGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @container monitoring-page (max-width: 1240px) {
   .headerShell {
     grid-template-columns: 1fr;
@@ -1787,6 +2301,51 @@
   .filterGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .summaryHero,
+  .summarySub,
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accountOverviewCardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container monitoring-page (max-width: 1024px) {
+  .panelHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panelHeaderCopy,
+  .panelExtra,
+  .accountOverviewHeaderActions,
+  .realtimeHeaderActions {
+    width: 100%;
+  }
+
+  .accountOverviewHeaderActions {
+    justify-items: stretch;
+  }
+
+  .accountOverviewSortBar,
+  .realtimeHeaderActions {
+    justify-content: flex-start;
+  }
+
+  .filterSearchRow :global(.form-group) {
+    min-width: 0;
+  }
+
+  .filterSearchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .filterSearchAction {
+    justify-content: stretch;
+  }
 }
 
 @container monitoring-page (max-width: 900px) {
@@ -1810,6 +2369,28 @@
 }
 
 @container monitoring-page (max-width: 768px) {
+  .page {
+    gap: 16px;
+  }
+
+  .headerShell {
+    gap: 14px;
+  }
+
+  .pageHeader {
+    gap: 6px;
+  }
+
+  .pageTitle {
+    font-size: 24px;
+  }
+
+  .description,
+  .panelSubtitle {
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
   .masthead,
   .panel,
   .summaryCard {
@@ -1830,12 +2411,28 @@
   .toolbarControls,
   .actionBar,
   .actionGroup,
-  .refreshControls {
+  .refreshControls,
+  .filterSearchRow,
+  .realtimeHeaderActions {
     width: 100%;
   }
 
+  .controlBar,
+  .refreshControls,
+  .paginationBar,
+  .paginationControls,
+  .realtimeHeaderActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .segmentedControl,
+  .realtimeHeaderActions {
+    justify-content: flex-start;
+  }
+
   .actionButton {
-    flex: 1 1 180px;
+    flex: 1 1 calc(50% - 8px);
   }
 
   .autoRefreshField {
@@ -1845,6 +2442,11 @@
 
   .autoRefreshSelect {
     width: 124px;
+  }
+
+  .autoRefreshLabel {
+    min-width: 0;
+    white-space: normal;
   }
 
   .filterGrid,
@@ -1871,15 +2473,91 @@
     flex: 1 1 0;
   }
 
-  .paginationBar,
-  .paginationControls {
-    justify-content: stretch;
-  }
-
   .paginationInfo,
   .pageSizeField {
     width: 100%;
     justify-content: center;
+  }
+
+  .panelExtra,
+  .accountOverviewHeaderActions,
+  .accountOverviewSortBar {
+    width: 100%;
+  }
+
+  .accountOverviewHeaderActions {
+    justify-items: stretch;
+  }
+
+  .accountOverviewModeToggle,
+  .accountOverviewSortDirectionButton,
+  .accountOverviewSortSelect {
+    width: 100%;
+  }
+
+  .accountOverviewSortBar {
+    justify-content: stretch;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .accountOverviewCardHeader {
+    flex-direction: column;
+  }
+
+  .accountOverviewModeToggle .segmentButton {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .accountOverviewSortLabel {
+    white-space: normal;
+  }
+
+  .filterSearchRow :global(.form-group) {
+    min-width: 0;
+  }
+
+  .refreshButton,
+  .clearButton,
+  .realtimeHeaderActions > span,
+  .realtimeHeaderActions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .statusMeta span {
+    white-space: normal;
+  }
+
+  .accountOverviewCardActionStack {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .accountOverviewToggleRow,
+  .accountOverviewStatusHeader,
+  .monitoringStatusBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accountOverviewToggleActions,
+  .accountOverviewStatusPills {
+    width: 100%;
+  }
+
+  .accountOverviewCardActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .accountOverviewCardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .accountOverviewMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .table {
@@ -1895,7 +2573,96 @@
   }
 }
 
+@container monitoring-page (max-width: 480px) {
+  .accountOverviewMetricGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .accountOverviewMetricCard {
+    gap: 4px;
+    padding: 10px 8px;
+    border-radius: 14px;
+  }
+
+  .accountOverviewMetricLabel {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .accountOverviewMetricValue {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+}
+
 @media (max-width: 640px) {
+  .page {
+    gap: 14px;
+  }
+
+  .panel,
+  .actionBar {
+    border-radius: 18px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .panelHeader {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .pageTitle {
+    font-size: 22px;
+  }
+
+  .description,
+  .panelSubtitle {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .segmentedControl {
+    gap: 6px;
+    padding: 4px;
+    border-radius: 18px;
+  }
+
+  .segmentButton {
+    flex: 1 1 calc(50% - 6px);
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .actionButton {
+    flex-basis: 100%;
+  }
+
+  .autoRefreshField {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .autoRefreshSelect {
+    width: 100%;
+  }
+
+  .autoRefreshSelectTrigger {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .statusMeta span,
+  .realtimeHeaderActions > span,
+  .realtimeHeaderActions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .customRangeModalGrid {
     grid-template-columns: 1fr;
   }

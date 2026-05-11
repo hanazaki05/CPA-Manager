@@ -2,6 +2,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
   IconChevronDown,
   IconChevronUp,
@@ -34,17 +36,47 @@ import {
   buildAccountRows,
   buildMonitoringSummary,
   buildRealtimeMonitorRows,
-  useMonitoringData,
+  getRangeBounds,
   type MonitoringAccountRow,
   type MonitoringCustomTimeRange,
   type MonitoringEventRow,
   type MonitoringStatusTone,
   type MonitoringTimeRange,
+  useMonitoringData,
 } from '@/features/monitoring/hooks/useMonitoringData';
+import {
+  ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
+  ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS,
+  buildEmptyMonitoringStatusData,
+  buildMonitoringAccountAuthStateMap,
+  buildMonitoringAccountStatusDataMap,
+  normalizeAccountOverviewPageSize,
+  resolveMonitoringStatusRangeBounds,
+  shouldClampAccountOverviewPage,
+  shouldResetAccountOverviewPage,
+  sortAccountRows,
+  readAccountOverviewUiState,
+  writeAccountOverviewUiState,
+  type AccountOverviewPageResetState,
+  type AccountSortKey,
+  type MonitoringAccountAuthState,
+  type AccountSortState,
+  type MonitoringAccountOverviewMode,
+} from '@/features/monitoring/accountOverviewState';
+import { sortAccountOverviewCardMetrics } from '@/features/monitoring/accountOverviewCardMetrics';
+import {
+  buildMonitoringAccountQuotaTargetsByAccount,
+  type MonitoringAccountQuotaTarget,
+} from '@/features/monitoring/accountOverviewQuotaTargets';
+import {
+  buildMonitoringStatusBlockAriaLabel,
+  getNextMonitoringStatusBlockIndex,
+} from '@/features/monitoring/healthStatusAccessibility';
+import { MonitoringPanel } from '@/features/monitoring/components/MonitoringPanel';
 import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
-import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
+import { apiCallApi, authFilesApi, getApiCallErrorMessage } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import type {
   AuthFileItem,
@@ -53,16 +85,14 @@ import type {
   CodexUsageWindow,
 } from '@/types';
 import { formatFileSize, maskSensitiveText } from '@/utils/format';
+import type { StatusBarData, StatusBlockDetail } from '@/utils/recentRequests';
 import {
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
   formatCodexResetLabel,
-  isCodexFile,
   normalizeNumberValue,
   normalizePlanType,
   parseCodexUsagePayload,
-  resolveCodexChatgptAccountId,
-  resolveCodexPlanType,
 } from '@/utils/quota';
 import {
   formatCompactNumber,
@@ -92,11 +122,17 @@ const AUTO_REFRESH_OPTIONS = [
   { value: '300000', labelKey: 'monitoring.auto_refresh_5m' },
 ];
 
-const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const REALTIME_PAGE_SIZE_OPTIONS = [10, 50, 100, 150, 300] as const;
-const DEFAULT_ACCOUNT_PAGE_SIZE = 10;
+const DEFAULT_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS[0];
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
+const EMPTY_STATUS_BAR_DATA: StatusBarData = {
+  blocks: [],
+  blockDetails: [],
+  successRate: 100,
+  totalSuccess: 0,
+  totalFailure: 0,
+};
 
 const padDateUnit = (value: number) => String(value).padStart(2, '0');
 
@@ -117,20 +153,7 @@ const parseDateTimeLocalValue = (value: string) => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
-const DEFAULT_ACCOUNT_SORT = {
-  key: 'lastSeenAt',
-  direction: 'desc',
-} as const;
-
 type StatusFilter = 'all' | 'success' | 'failed';
-
-type PanelProps = {
-  title?: string;
-  subtitle?: string;
-  extra?: ReactNode;
-  children: ReactNode;
-  className?: string;
-};
 
 type SummaryCardProps = {
   label: string;
@@ -162,15 +185,6 @@ type RealtimeLogRow = MonitoringEventRow & {
   recentPattern: boolean[];
 };
 
-type AccountQuotaTarget = {
-  key: string;
-  authIndex: string;
-  authLabel: string;
-  fileName: string;
-  accountId: string | null;
-  planType: string | null;
-};
-
 type AccountQuotaWindow = {
   id: string;
   label: string;
@@ -193,24 +207,6 @@ type AccountQuotaState = {
   entries: AccountQuotaEntry[];
   error?: string;
   lastRefreshedAt?: number;
-};
-
-type AccountSortKey =
-  | 'totalCalls'
-  | 'successCalls'
-  | 'failureCalls'
-  | 'totalTokens'
-  | 'inputTokens'
-  | 'outputTokens'
-  | 'cachedTokens'
-  | 'totalCost'
-  | 'lastSeenAt';
-
-type AccountSortDirection = 'asc' | 'desc';
-
-type AccountSortState = {
-  key: AccountSortKey;
-  direction: AccountSortDirection;
 };
 
 type AccountOverviewColumn = {
@@ -406,36 +402,6 @@ const buildAccountSummaryMetrics = (
   },
 ];
 
-const getAccountSortValue = (row: MonitoringAccountRow, key: AccountSortKey) => {
-  switch (key) {
-    case 'totalCalls':
-      return row.totalCalls;
-    case 'successCalls':
-      return row.successCalls;
-    case 'failureCalls':
-      return row.failureCalls;
-    case 'totalTokens':
-      return row.totalTokens;
-    case 'inputTokens':
-      return row.inputTokens;
-    case 'outputTokens':
-      return row.outputTokens;
-    case 'cachedTokens':
-      return row.cachedTokens;
-    case 'totalCost':
-      return row.totalCost;
-    case 'lastSeenAt':
-    default:
-      return row.lastSeenAt;
-  }
-};
-
-const compareAccountRowsByDefault = (left: MonitoringAccountRow, right: MonitoringAccountRow) =>
-  right.lastSeenAt - left.lastSeenAt ||
-  right.totalCalls - left.totalCalls ||
-  right.totalCost - left.totalCost ||
-  left.account.localeCompare(right.account);
-
 const buildAccountQuotaWindows = (
   payload: CodexUsagePayload,
   t: TFunction
@@ -575,7 +541,7 @@ const buildAccountQuotaWindows = (
 };
 
 const requestAccountQuota = async (
-  target: AccountQuotaTarget,
+  target: MonitoringAccountQuotaTarget,
   t: TFunction
 ): Promise<AccountQuotaEntry> => {
   if (!target.accountId) {
@@ -643,25 +609,6 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
       right.id.localeCompare(left.id)
   );
 };
-
-function Panel({ title, subtitle, extra, children, className }: PanelProps) {
-  const hasHeader = Boolean(title || subtitle || extra);
-
-  return (
-    <Card className={[styles.panel, className].filter(Boolean).join(' ')}>
-      {hasHeader ? (
-        <div className={styles.panelHeader}>
-          <div>
-            {title ? <h2 className={styles.panelTitle}>{title}</h2> : null}
-            {subtitle ? <p className={styles.panelSubtitle}>{subtitle}</p> : null}
-          </div>
-          {extra ? <div className={styles.panelExtra}>{extra}</div> : null}
-        </div>
-      ) : null}
-      {children}
-    </Card>
-  );
-}
 
 function SummaryCard({ label, value, meta, tone, variant = 'primary' }: SummaryCardProps) {
   const cardClassName = [
@@ -774,6 +721,277 @@ function RecentPattern({
           className={`${barClassName} ${item ? styles.patternSuccess : styles.patternFailed}`}
         />
       ))}
+    </div>
+  );
+}
+
+const STATUS_BAR_COLOR_STOPS = [
+  { r: 239, g: 68, b: 68 },
+  { r: 250, g: 204, b: 21 },
+  { r: 34, g: 197, b: 94 },
+] as const;
+
+const formatStatusRate = (rate: number) => {
+  const rounded = rate.toFixed(1);
+  return `${rounded.endsWith('.0') ? rounded.slice(0, -2) : rounded}%`;
+};
+
+const formatStatusWindowLabel = (startTime: number, endTime: number, locale: string) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const sameDay = start.toDateString() === end.toDateString();
+  const dateOptions: Intl.DateTimeFormatOptions = { month: 'numeric', day: 'numeric' };
+  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+  const startDateLabel = start.toLocaleDateString(locale, dateOptions);
+  const endDateLabel = end.toLocaleDateString(locale, dateOptions);
+  const startTimeLabel = start.toLocaleTimeString(locale, timeOptions);
+  const endTimeLabel = end.toLocaleTimeString(locale, timeOptions);
+
+  return sameDay
+    ? `${startDateLabel} ${startTimeLabel} - ${endTimeLabel}`
+    : `${startDateLabel} ${startTimeLabel} - ${endDateLabel} ${endTimeLabel}`;
+};
+
+const rateToStatusColor = (rate: number) => {
+  const t = Math.max(0, Math.min(1, rate));
+  const segment = t < 0.5 ? 0 : 1;
+  const localT = segment === 0 ? t * 2 : (t - 0.5) * 2;
+  const from = STATUS_BAR_COLOR_STOPS[segment];
+  const to = STATUS_BAR_COLOR_STOPS[segment + 1];
+  const r = Math.round(from.r + (to.r - from.r) * localT);
+  const g = Math.round(from.g + (to.g - from.g) * localT);
+  const b = Math.round(from.b + (to.b - from.b) * localT);
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+function MonitoringHealthStatusBar({
+  statusData,
+  locale,
+  t,
+}: {
+  statusData: StatusBarData;
+  locale: string;
+  t: TFunction;
+}) {
+  const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
+  const [focusIndex, setFocusIndex] = useState(() =>
+    statusData.blockDetails.length > 0 ? 0 : -1
+  );
+  const blocksRef = useRef<HTMLDivElement | null>(null);
+  const blockButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tooltipIdPrefix = useId();
+  const blockCount = statusData.blockDetails.length;
+  const resolvedFocusIndex =
+    blockCount === 0 ? -1 : focusIndex >= 0 && focusIndex < blockCount ? focusIndex : 0;
+  const resolvedActiveTooltip =
+    activeTooltip !== null && activeTooltip >= 0 && activeTooltip < blockCount
+      ? activeTooltip
+      : null;
+  const hasData = statusData.totalSuccess + statusData.totalFailure > 0;
+  const rateClassName = !hasData
+    ? ''
+    : statusData.successRate >= 90
+      ? styles.monitoringStatusRateHigh
+      : statusData.successRate >= 50
+        ? styles.monitoringStatusRateMedium
+        : styles.monitoringStatusRateLow;
+
+  useEffect(() => {
+    if (resolvedActiveTooltip === null) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (blocksRef.current && !blocksRef.current.contains(event.target as Node)) {
+        setActiveTooltip(null);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [resolvedActiveTooltip]);
+
+  const handlePointerEnter = useCallback((event: React.PointerEvent, index: number) => {
+    if (event.pointerType === 'mouse') {
+      setActiveTooltip(index);
+    }
+  }, []);
+
+  const handlePointerLeave = useCallback((event: React.PointerEvent) => {
+    if (
+      event.pointerType === 'mouse' &&
+      (!blocksRef.current || !blocksRef.current.contains(document.activeElement))
+    ) {
+      setActiveTooltip(null);
+    }
+  }, []);
+
+  const handlePointerDown = useCallback((event: React.PointerEvent, index: number) => {
+    if (event.pointerType === 'touch') {
+      event.preventDefault();
+      setFocusIndex(index);
+      setActiveTooltip((previous) => (previous === index ? null : index));
+    }
+  }, []);
+
+  const focusBlock = useCallback((index: number) => {
+    blockButtonRefs.current[index]?.focus();
+    setFocusIndex(index);
+    setActiveTooltip(index);
+  }, []);
+
+  const handleFocus = useCallback((index: number) => {
+    setFocusIndex(index);
+    setActiveTooltip(index);
+  }, []);
+
+  const handleBlur = useCallback((event: React.FocusEvent<HTMLButtonElement>) => {
+    if (blocksRef.current?.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setActiveTooltip(null);
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+      if (event.key === 'Escape') {
+        setActiveTooltip(null);
+        return;
+      }
+
+      const nextIndex = getNextMonitoringStatusBlockIndex(
+        index,
+        event.key,
+        blockCount
+      );
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      focusBlock(nextIndex);
+    },
+    [blockCount, focusBlock]
+  );
+
+  const getTooltipPositionClassName = (index: number, total: number) => {
+    if (index <= 2) return styles.monitoringStatusTooltipLeft;
+    if (index >= total - 3) return styles.monitoringStatusTooltipRight;
+    return '';
+  };
+
+  const renderTooltip = (detail: StatusBlockDetail, index: number, tooltipId: string) => {
+    const total = detail.success + detail.failure;
+    const timeRange = formatStatusWindowLabel(detail.startTime, detail.endTime, locale);
+
+    return (
+      <div
+        id={tooltipId}
+        role="tooltip"
+        className={[
+          styles.monitoringStatusTooltip,
+          getTooltipPositionClassName(index, statusData.blockDetails.length),
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <span className={styles.monitoringTooltipTime}>{timeRange}</span>
+        {total > 0 ? (
+          <span className={styles.monitoringTooltipStats}>
+            <span className={styles.monitoringTooltipSuccess}>
+              {t('status_bar.success_short')} {detail.success}
+            </span>
+            <span className={styles.monitoringTooltipFailure}>
+              {t('status_bar.failure_short')} {detail.failure}
+            </span>
+            <span className={styles.monitoringTooltipRate}>
+              ({(detail.rate * 100).toFixed(1)}%)
+            </span>
+          </span>
+        ) : (
+          <span className={styles.monitoringTooltipStats}>{t('status_bar.no_requests')}</span>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className={styles.monitoringStatusBar}>
+      <div
+        className={styles.monitoringStatusBlocks}
+        ref={blocksRef}
+        role="group"
+        aria-label={t('monitoring.account_overview_health_label')}
+      >
+        {statusData.blockDetails.map((detail, index) => {
+          const isIdle = detail.rate === -1;
+          const isActive = resolvedActiveTooltip === index;
+          const timeRangeLabel = formatStatusWindowLabel(detail.startTime, detail.endTime, locale);
+          const tooltipId = `${tooltipIdPrefix}-monitoring-status-tooltip-${index}`;
+          const ariaLabel = buildMonitoringStatusBlockAriaLabel({
+            detail,
+            timeRangeLabel,
+            successRateValue: formatStatusRate(Math.max(0, detail.rate * 100)),
+            copy: {
+              successLabel: t('stats.success'),
+              failureLabel: t('stats.failure'),
+              noRequestsLabel: t('status_bar.no_requests'),
+              successRateLabel: t('monitoring.success_rate'),
+            },
+          });
+
+          return (
+            <div
+              key={`${detail.startTime}-${detail.endTime}`}
+              className={[
+                styles.monitoringStatusBlockWrapper,
+                isActive ? styles.monitoringStatusBlockActive : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            >
+              <button
+                ref={(node) => {
+                  blockButtonRefs.current[index] = node;
+                }}
+                type="button"
+                className={styles.monitoringStatusBlockButton}
+                tabIndex={resolvedFocusIndex === index ? 0 : -1}
+                aria-label={ariaLabel}
+                aria-describedby={isActive ? tooltipId : undefined}
+                onFocus={() => handleFocus(index)}
+                onBlur={handleBlur}
+                onKeyDown={(event) => handleKeyDown(event, index)}
+                onPointerEnter={(event) => handlePointerEnter(event, index)}
+                onPointerLeave={handlePointerLeave}
+                onPointerDown={(event) => handlePointerDown(event, index)}
+              >
+                <div
+                  aria-hidden="true"
+                  className={[
+                    styles.monitoringStatusBlock,
+                    isIdle ? styles.monitoringStatusBlockIdle : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={isIdle ? undefined : { backgroundColor: rateToStatusColor(detail.rate) }}
+                />
+              </button>
+              {isActive ? renderTooltip(detail, index, tooltipId) : null}
+            </div>
+          );
+        })}
+      </div>
+      <span
+        className={[
+          styles.monitoringStatusRate,
+          rateClassName,
+          !hasData ? styles.monitoringStatusRatePlaceholder : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {hasData ? formatStatusRate(statusData.successRate) : '--'}
+      </span>
     </div>
   );
 }
@@ -1062,6 +1280,182 @@ function ExpandedAccountCard({
   );
 }
 
+export function AccountOverviewCard({
+  row,
+  authState,
+  hasPrices,
+  locale,
+  t,
+  isExpanded,
+  isFocused,
+  statusData,
+  quotaState,
+  statusUpdating,
+  onToggle,
+  onFocus,
+  onToggleEnabled,
+  onRefreshQuota,
+}: {
+  row: MonitoringAccountRow;
+  authState: MonitoringAccountAuthState;
+  hasPrices: boolean;
+  locale: string;
+  t: TFunction;
+  isExpanded: boolean;
+  isFocused: boolean;
+  statusData: StatusBarData;
+  quotaState?: AccountQuotaState;
+  statusUpdating: boolean;
+  onToggle: () => void;
+  onFocus: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
+  onRefreshQuota: () => void;
+}) {
+  const summaryMetrics = buildAccountSummaryMetrics(row, hasPrices, locale, t);
+  const cardMetrics = sortAccountOverviewCardMetrics(summaryMetrics);
+  // Cost is summarized in the status pills above the grid, not repeated as a card metric.
+  const costMetric = summaryMetrics.find((metric) => metric.key === 'estimated-cost');
+  const latestMetric = summaryMetrics.find((metric) => metric.key === 'latest-request-time');
+  const canToggleEnabled = authState.enabledState !== 'unavailable';
+  const toggleChecked = authState.enabledState === 'enabled';
+
+  return (
+    <Card
+      className={[
+        styles.accountOverviewCard,
+        isExpanded ? styles.accountOverviewCardExpanded : '',
+        isFocused ? styles.accountOverviewCardFocused : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div className={styles.accountOverviewCardHeader}>
+        <div className={styles.accountOverviewCardPrimary}>
+          <AccountSummaryPrimary row={row} expanded={isExpanded} onToggle={onToggle} />
+          {latestMetric ? (
+            <span className={styles.accountOverviewCardTimestamp}>
+              {`${latestMetric.label}: ${latestMetric.value}`}
+            </span>
+          ) : null}
+        </div>
+
+        <div className={styles.accountOverviewCardActions}>
+          <div className={styles.accountOverviewCardActionStack}>
+            <button type="button" className={styles.inlineActionButton} onClick={onFocus}>
+              {isFocused ? t('monitoring.restore_account_scope') : t('monitoring.focus_account')}
+            </button>
+
+            <div className={styles.accountOverviewHeaderToggle}>
+              {authState.enabledState === 'mixed' ? (
+                <>
+                  <button
+                    type="button"
+                    className={styles.inlineActionButton}
+                    onClick={() => onToggleEnabled(true)}
+                    disabled={statusUpdating}
+                  >
+                    {t('monitoring.account_overview_enable_all')}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.inlineActionButton}
+                    onClick={() => onToggleEnabled(false)}
+                    disabled={statusUpdating}
+                  >
+                    {t('monitoring.account_overview_disable_all')}
+                  </button>
+                </>
+              ) : (
+                <ToggleSwitch
+                  ariaLabel={t('monitoring.account_overview_enabled_label')}
+                  checked={toggleChecked}
+                  disabled={!canToggleEnabled || statusUpdating}
+                  onChange={onToggleEnabled}
+                  label={t('auth_files.status_toggle_label')}
+                  labelPosition="left"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.accountOverviewStatusSection}>
+        <div className={styles.accountOverviewStatusHeader}>
+          <span className={styles.accountOverviewStatusLabel}>
+            {t('monitoring.account_overview_health_label')}
+          </span>
+          <div className={styles.accountOverviewStatusPills}>
+            <span
+              className={[
+                styles.accountOverviewStatusPill,
+                styles.accountOverviewStatusPillNeutral,
+              ].join(' ')}
+            >
+              {t('monitoring.total_calls')} {formatCompactNumber(row.totalCalls)}
+            </span>
+            <span
+              className={[
+                styles.accountOverviewStatusPill,
+                styles.accountOverviewStatusPillSuccess,
+              ].join(' ')}
+            >
+              {t('stats.success')} {formatCompactNumber(row.successCalls)}
+            </span>
+            <span
+              className={[
+                styles.accountOverviewStatusPill,
+                styles.accountOverviewStatusPillFailure,
+              ].join(' ')}
+            >
+              {t('stats.failure')} {formatCompactNumber(row.failureCalls)}
+            </span>
+            {costMetric ? (
+              <span
+                className={[
+                  styles.accountOverviewStatusPill,
+                  styles.accountOverviewStatusPillCost,
+                ].join(' ')}
+              >
+                {costMetric.label} {costMetric.value}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <MonitoringHealthStatusBar statusData={statusData} locale={locale} t={t} />
+      </div>
+
+      <div className={styles.accountOverviewMetricGrid}>
+        {cardMetrics.map((metric) => (
+          <div key={metric.key} className={styles.accountOverviewMetricCard}>
+            <span className={styles.accountOverviewMetricLabel}>{metric.label}</span>
+            <strong
+              className={[styles.accountOverviewMetricValue, metric.valueClassName]
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {metric.value}
+            </strong>
+          </div>
+        ))}
+      </div>
+
+      {isExpanded ? (
+        <div className={styles.accountOverviewCardBody}>
+          <ModelSpendTable
+            row={row}
+            hasPrices={hasPrices}
+            locale={locale}
+            t={t}
+            quotaState={quotaState}
+            onRefreshQuota={onRefreshQuota}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 export function MonitoringCenterPage() {
   const { t, i18n } = useTranslation();
   const config = useConfigStore((state) => state.config);
@@ -1092,16 +1486,33 @@ export function MonitoringCenterPage() {
   const [accountQuotaStates, setAccountQuotaStates] = useState<Record<string, AccountQuotaState>>(
     {}
   );
-  const [accountSort, setAccountSort] = useState<AccountSortState>(DEFAULT_ACCOUNT_SORT);
-  const [accountPage, setAccountPage] = useState(1);
-  const [accountPageSize, setAccountPageSize] = useState(DEFAULT_ACCOUNT_PAGE_SIZE);
+  const initialAccountOverviewUiState = useRef(readAccountOverviewUiState());
+  const [accountOverviewMode, setAccountOverviewMode] = useState<MonitoringAccountOverviewMode>(
+    initialAccountOverviewUiState.current.mode
+  );
+  const [accountSort, setAccountSort] = useState<AccountSortState>(
+    initialAccountOverviewUiState.current.sort
+  );
+  const [accountPageByMode, setAccountPageByMode] = useState(() => ({
+    table: 1,
+    card: initialAccountOverviewUiState.current.cardPagination.page,
+  }));
+  const [accountPageSizeByMode, setAccountPageSizeByMode] = useState(() => ({
+    table: DEFAULT_ACCOUNT_PAGE_SIZE,
+    card: initialAccountOverviewUiState.current.cardPagination.pageSize,
+  }));
+  const [accountStatusUpdating, setAccountStatusUpdating] = useState<Record<string, boolean>>({});
   const [realtimePage, setRealtimePage] = useState(1);
   const [realtimePageSize, setRealtimePageSize] = useState(DEFAULT_REALTIME_PAGE_SIZE);
   const focusSnapshotRef = useRef<FocusSnapshot | null>(null);
+  const previousAccountPageResetStateRef = useRef<AccountOverviewPageResetState | null>(null);
   const accountQuotaStatesRef = useRef<Record<string, AccountQuotaState>>({});
   const accountQuotaRequestIdsRef = useRef<Record<string, number>>({});
   const usageImportInputRef = useRef<HTMLInputElement | null>(null);
   const deferredSearch = useDeferredValue(searchInput);
+  const accountPage = accountOverviewMode === 'card' ? accountPageByMode.card : accountPageByMode.table;
+  const accountPageSize =
+    accountOverviewMode === 'card' ? accountPageSizeByMode.card : accountPageSizeByMode.table;
   const customStartMs = useMemo(
     () => parseDateTimeLocalValue(customStartInput),
     [customStartInput]
@@ -1182,6 +1593,20 @@ export function MonitoringCenterPage() {
     await Promise.all([loadUsage(), refreshMeta(false)]);
   }, [loadUsage, refreshMeta]);
 
+  const setCurrentAccountPage = useCallback(
+    (page: number) => {
+      setAccountPageByMode((previous) => ({
+        ...previous,
+        [accountOverviewMode]: page,
+      }));
+    },
+    [accountOverviewMode]
+  );
+
+  const resetCurrentAccountPage = useCallback(() => {
+    setCurrentAccountPage(1);
+  }, [setCurrentAccountPage]);
+
   useHeaderRefresh(refreshAll);
   useInterval(
     () => {
@@ -1197,6 +1622,17 @@ export function MonitoringCenterPage() {
   useEffect(() => {
     accountQuotaStatesRef.current = accountQuotaStates;
   }, [accountQuotaStates]);
+
+  useEffect(() => {
+    writeAccountOverviewUiState({
+      mode: accountOverviewMode,
+      sort: accountSort,
+      cardPagination: {
+        page: accountPageByMode.card,
+        pageSize: accountPageSizeByMode.card,
+      },
+    });
+  }, [accountOverviewMode, accountPageByMode.card, accountPageSizeByMode.card, accountSort]);
 
   const providerOptions = useMemo(
     () => [
@@ -1314,22 +1750,30 @@ export function MonitoringCenterPage() {
     () => scopedRows.filter((row) => row.statsIncluded),
     [scopedRows]
   );
+  const accountStatusNowMs = lastRefreshedAt?.getTime() ?? Date.now();
+  const accountStatusBounds = useMemo(
+    () => getRangeBounds(timeRange, accountStatusNowMs, customTimeRange),
+    [accountStatusNowMs, customTimeRange, timeRange]
+  );
 
   const scopedSummary = useMemo(() => buildMonitoringSummary(scopedStatsRows), [scopedStatsRows]);
   const accountRows = useMemo(() => buildAccountRows(scopedRows), [scopedRows]);
-  const sortedAccountRows = useMemo(() => {
-    const directionFactor = accountSort.direction === 'desc' ? -1 : 1;
-
-    return [...accountRows].sort((left, right) => {
-      const valueDiff =
-        getAccountSortValue(left, accountSort.key) - getAccountSortValue(right, accountSort.key);
-      if (valueDiff !== 0) {
-        return valueDiff * directionFactor;
-      }
-
-      return compareAccountRowsByDefault(left, right);
-    });
-  }, [accountRows, accountSort]);
+  const accountStatusDataByRowId = useMemo(
+    () => buildMonitoringAccountStatusDataMap(scopedRows, accountStatusBounds),
+    [accountStatusBounds, scopedRows]
+  );
+  const emptyAccountStatusData = useMemo(() => {
+    const resolvedBounds = resolveMonitoringStatusRangeBounds(scopedRows, accountStatusBounds);
+    return resolvedBounds ? buildEmptyMonitoringStatusData(resolvedBounds) : EMPTY_STATUS_BAR_DATA;
+  }, [accountStatusBounds, scopedRows]);
+  const accountAuthStateByRowId = useMemo(
+    () => buildMonitoringAccountAuthStateMap(accountRows, authFilesByAuthIndex),
+    [accountRows, authFilesByAuthIndex]
+  );
+  const sortedAccountRows = useMemo(
+    () => sortAccountRows(accountRows, accountSort),
+    [accountRows, accountSort]
+  );
   const groupedRealtimeRows = useMemo(
     () => buildRealtimeMonitorRows(scopedStatsRows),
     [scopedStatsRows]
@@ -1343,56 +1787,59 @@ export function MonitoringCenterPage() {
     () => buildPaginationState(realtimeLogRows, realtimePage, realtimePageSize),
     [realtimeLogRows, realtimePage, realtimePageSize]
   );
+  const accountPageResetState = useMemo<AccountOverviewPageResetState>(
+    () => ({
+      customEndInput,
+      customStartInput,
+      deferredSearch,
+      selectedAccount,
+      selectedChannel,
+      selectedModel,
+      selectedProvider,
+      selectedStatus,
+      timeRange,
+    }),
+    [
+      customEndInput,
+      customStartInput,
+      deferredSearch,
+      selectedAccount,
+      selectedChannel,
+      selectedModel,
+      selectedProvider,
+      selectedStatus,
+      timeRange,
+    ]
+  );
 
   useEffect(() => {
-    setAccountPage(1);
-    setRealtimePage(1);
-  }, [
-    customEndInput,
-    customStartInput,
-    deferredSearch,
-    selectedAccount,
-    selectedChannel,
-    selectedModel,
-    selectedProvider,
-    selectedStatus,
-    timeRange,
-  ]);
+    if (
+      shouldResetAccountOverviewPage(
+        previousAccountPageResetStateRef.current,
+        accountPageResetState
+      )
+    ) {
+      resetCurrentAccountPage();
+      setRealtimePage(1);
+    }
 
-  const accountQuotaTargetsByAccount = useMemo(() => {
-    const grouped = new Map<string, Map<string, AccountQuotaTarget>>();
+    previousAccountPageResetStateRef.current = accountPageResetState;
+  }, [accountPageResetState, resetCurrentAccountPage]);
 
-    scopedRows.forEach((row) => {
-      const authIndex = normalizeAuthIndex(row.authIndex);
-      if (!authIndex || !row.account) return;
+  useEffect(() => {
+    if (
+      !shouldClampAccountOverviewPage(overallLoading, accountPage, accountPagination.currentPage)
+    ) {
+      return;
+    }
 
-      const file = authFilesByAuthIndex.get(authIndex);
-      if (!file || !isCodexFile(file)) return;
+    setCurrentAccountPage(accountPagination.currentPage);
+  }, [accountPage, accountPagination.currentPage, overallLoading, setCurrentAccountPage]);
 
-      const dedupeKey = `${authIndex}::${file.name}`;
-      const bucket = grouped.get(row.account) ?? new Map<string, AccountQuotaTarget>();
-      if (!bucket.has(dedupeKey)) {
-        bucket.set(dedupeKey, {
-          key: dedupeKey,
-          authIndex,
-          authLabel: row.authLabel || file.name || authIndex,
-          fileName: file.name,
-          accountId: resolveCodexChatgptAccountId(file),
-          planType: resolveCodexPlanType(file),
-        });
-      }
-      grouped.set(row.account, bucket);
-    });
-
-    return new Map(
-      Array.from(grouped.entries()).map(([account, bucket]) => [
-        account,
-        Array.from(bucket.values()).sort((left, right) =>
-          left.authLabel.localeCompare(right.authLabel)
-        ),
-      ])
-    );
-  }, [authFilesByAuthIndex, scopedRows]);
+  const accountQuotaTargetsByAccount = useMemo(
+    () => buildMonitoringAccountQuotaTargetsByAccount(accountRows, accountAuthStateByRowId),
+    [accountAuthStateByRowId, accountRows]
+  );
   const scopedFailureCount = scopedRows.filter((row) => row.failed).length;
   const savedPriceEntries = useMemo(
     () => Object.entries(modelPrices).sort((left, right) => left[0].localeCompare(right[0])),
@@ -1433,6 +1880,24 @@ export function MonitoringCenterPage() {
     ],
     [t]
   );
+
+  const accountSortOptions = useMemo(
+    () =>
+      accountOverviewColumns
+        .filter((column): column is AccountOverviewColumn & { sortKey: AccountSortKey } =>
+          Boolean(column.sortKey)
+        )
+        .map((column) => ({
+          value: column.sortKey,
+          label: column.label,
+        })),
+    [accountOverviewColumns]
+  );
+
+  const accountPageSizeOptions =
+    accountOverviewMode === 'card'
+      ? ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS
+      : ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS;
 
   const primarySummaryCards: SummaryCardProps[] = [
     {
@@ -1702,17 +2167,86 @@ export function MonitoringCenterPage() {
   );
 
   const handleAccountPageSizeChange = useCallback((pageSize: number) => {
-    setAccountPageSize(pageSize);
-    setAccountPage(1);
-  }, []);
+    setAccountPageSizeByMode((previous) => ({
+      ...previous,
+      [accountOverviewMode]: normalizeAccountOverviewPageSize(pageSize, accountOverviewMode),
+    }));
+    resetCurrentAccountPage();
+  }, [accountOverviewMode, resetCurrentAccountPage]);
+
+  const handleAccountStatusToggle = useCallback(
+    async (row: MonitoringAccountRow, enabled: boolean) => {
+      const authState = accountAuthStateByRowId.get(row.id);
+      const fileNames = authState?.toggleableFileNames ?? [];
+      if (fileNames.length === 0) return;
+
+      setAccountStatusUpdating((previous) => ({ ...previous, [row.id]: true }));
+
+      const results = await Promise.allSettled(
+        fileNames.map((fileName) => authFilesApi.setStatusWithFallback(fileName, !enabled))
+      );
+
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failureCount = results.length - successCount;
+
+      try {
+        await refreshMeta(false);
+      } finally {
+        setAccountStatusUpdating((previous) => {
+          const next = { ...previous };
+          delete next[row.id];
+          return next;
+        });
+      }
+
+      if (failureCount === 0) {
+        showNotification(
+          enabled
+            ? t('monitoring.account_overview_status_enabled_success', { count: successCount })
+            : t('monitoring.account_overview_status_disabled_success', { count: successCount }),
+          'success'
+        );
+        return;
+      }
+
+      showNotification(
+        t('monitoring.account_overview_status_partial', {
+          success: successCount,
+          failed: failureCount,
+        }),
+        successCount > 0 ? 'warning' : 'error'
+      );
+    },
+    [accountAuthStateByRowId, refreshMeta, showNotification, t]
+  );
 
   const handleRealtimePageSizeChange = useCallback((pageSize: number) => {
     setRealtimePageSize(pageSize);
     setRealtimePage(1);
   }, []);
 
+  const handleAccountSortKeyChange = useCallback((key: AccountSortKey) => {
+    resetCurrentAccountPage();
+    setAccountSort((previous) =>
+      previous.key === key
+        ? previous
+        : {
+            key,
+            direction: 'desc',
+          }
+    );
+  }, [resetCurrentAccountPage]);
+
+  const handleAccountSortDirectionToggle = useCallback(() => {
+    resetCurrentAccountPage();
+    setAccountSort((previous) => ({
+      ...previous,
+      direction: previous.direction === 'desc' ? 'asc' : 'desc',
+    }));
+  }, [resetCurrentAccountPage]);
+
   const handleAccountSort = useCallback((key: AccountSortKey) => {
-    setAccountPage(1);
+    resetCurrentAccountPage();
     setAccountSort((previous) =>
       previous.key === key
         ? {
@@ -1724,7 +2258,11 @@ export function MonitoringCenterPage() {
             direction: 'desc',
           }
     );
-  }, []);
+  }, [resetCurrentAccountPage]);
+
+  const handleAccountPageChange = useCallback((page: number) => {
+    setCurrentAccountPage(page);
+  }, [setCurrentAccountPage]);
 
   const handlePriceModelChange = useCallback(
     (value: string) => {
@@ -2017,7 +2555,7 @@ export function MonitoringCenterPage() {
         </div>
       </section>
 
-      <Panel className={styles.toolbarPanel}>
+      <MonitoringPanel className={styles.toolbarPanel}>
         <div className={styles.controlBar}>
           <div className={styles.segmentedControl}>
             {TIME_RANGE_OPTIONS.map((option) => (
@@ -2104,18 +2642,22 @@ export function MonitoringCenterPage() {
           </div>
 
           <div className={styles.filterSearchRow}>
-            <Input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={t('monitoring.search_placeholder')}
-              className={styles.filterSearchInput}
-              rightElement={<IconSearch size={16} />}
-              aria-label={t('monitoring.search_placeholder')}
-            />
-            <button type="button" className={styles.clearButton} onClick={clearFilters}>
-              <IconSlidersHorizontal size={16} />
-              <span>{t('monitoring.clear_filters')}</span>
-            </button>
+            <div className={styles.filterSearchInputWrap}>
+              <Input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder={t('monitoring.search_placeholder')}
+                className={styles.filterSearchInput}
+                rightElement={<IconSearch size={16} />}
+                aria-label={t('monitoring.search_placeholder')}
+              />
+            </div>
+            <div className={styles.filterSearchAction}>
+              <button type="button" className={styles.clearButton} onClick={clearFilters}>
+                <IconSlidersHorizontal size={16} />
+                <span>{t('monitoring.clear_filters')}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2126,7 +2668,7 @@ export function MonitoringCenterPage() {
             <span>{t('monitoring.usage_disabled_body')}</span>
           </div>
         ) : null}
-      </Panel>
+      </MonitoringPanel>
 
       <section className={styles.summarySection}>
         <div className={styles.summaryHero}>
@@ -2141,130 +2683,237 @@ export function MonitoringCenterPage() {
         </div>
       </section>
 
-      <Panel
+      <MonitoringPanel
         title={t('monitoring.account_overview_title')}
         subtitle={t('monitoring.account_overview_desc')}
         className={styles.accountPanel}
+        extra={
+          <div className={styles.accountOverviewHeaderActions}>
+            <div className={`${styles.segmentedControl} ${styles.accountOverviewModeToggle}`}>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${accountOverviewMode === 'table' ? styles.segmentButtonActive : ''}`}
+                onClick={() => setAccountOverviewMode('table')}
+              >
+                {t('monitoring.account_overview_view_mode_table')}
+              </button>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${accountOverviewMode === 'card' ? styles.segmentButtonActive : ''}`}
+                onClick={() => setAccountOverviewMode('card')}
+              >
+                {t('monitoring.account_overview_view_mode_card')}
+              </button>
+            </div>
+
+            {accountOverviewMode === 'card' ? (
+              <div className={styles.accountOverviewSortBar}>
+                <span className={styles.accountOverviewSortLabel}>
+                  {t('monitoring.account_overview_sort_label')}
+                </span>
+                <Select
+                  className={styles.accountOverviewSortSelect}
+                  triggerClassName={styles.accountOverviewSortSelectTrigger}
+                  value={accountSort.key}
+                  options={accountSortOptions}
+                  onChange={(value) => handleAccountSortKeyChange(value as AccountSortKey)}
+                  ariaLabel={t('monitoring.account_overview_sort_label')}
+                  fullWidth={false}
+                />
+                <button
+                  type="button"
+                  className={styles.accountOverviewSortDirectionButton}
+                  onClick={handleAccountSortDirectionToggle}
+                  aria-label={t(
+                    accountSort.direction === 'desc'
+                      ? 'monitoring.account_overview_sort_direction_desc'
+                      : 'monitoring.account_overview_sort_direction_asc'
+                  )}
+                  title={t(
+                    accountSort.direction === 'desc'
+                      ? 'monitoring.account_overview_sort_direction_desc'
+                      : 'monitoring.account_overview_sort_direction_asc'
+                  )}
+                >
+                  {accountSort.direction === 'desc' ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                  <span>
+                    {t(
+                      accountSort.direction === 'desc'
+                        ? 'monitoring.account_overview_sort_direction_desc'
+                        : 'monitoring.account_overview_sort_direction_asc'
+                    )}
+                  </span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+        }
       >
-        <div className={styles.tableWrapper}>
-          <table className={`${styles.table} ${styles.accountOverviewTable}`}>
-            <colgroup>
-              {accountOverviewColumns.map((column) => (
-                <col key={column.key} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr>
-                {accountOverviewColumns.map((column) => {
-                  if (!column.sortKey) {
-                    return <th key={column.key}>{column.label}</th>;
+        {accountOverviewMode === 'table' ? (
+          <div className={styles.tableWrapper}>
+            <table className={`${styles.table} ${styles.accountOverviewTable}`}>
+              <colgroup>
+                {accountOverviewColumns.map((column) => (
+                  <col key={column.key} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr>
+                  {accountOverviewColumns.map((column) => {
+                    const sortKey = column.sortKey;
+
+                    if (!sortKey) {
+                      return <th key={column.key}>{column.label}</th>;
+                    }
+
+                    const isActive = accountSort.key === sortKey;
+                    const SortIcon = isActive
+                      ? accountSort.direction === 'desc'
+                        ? IconChevronDown
+                        : IconChevronUp
+                      : null;
+
+                    return (
+                      <th
+                        key={column.key}
+                        aria-sort={
+                          isActive
+                            ? accountSort.direction === 'desc'
+                              ? 'descending'
+                              : 'ascending'
+                            : 'none'
+                        }
+                      >
+                        <button
+                          type="button"
+                          className={[
+                            styles.sortableHeaderButton,
+                            isActive ? styles.sortableHeaderButtonActive : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          onClick={() => handleAccountSort(sortKey)}
+                        >
+                          <span>{column.label}</span>
+                          <span className={styles.sortIndicator} aria-hidden="true">
+                            {SortIcon ? <SortIcon size={14} /> : null}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {accountPagination.pageItems.map((row) => {
+                  const isExpanded = Boolean(expandedAccounts[row.id]);
+                  const isFocused = focusedAccount === row.account;
+                  const summaryMetrics = buildAccountSummaryMetrics(
+                    row,
+                    hasPrices,
+                    i18n.language,
+                    t
+                  );
+
+                  if (isExpanded) {
+                    return (
+                      <tr key={row.id} className={styles.expandedAccountCardRow}>
+                        <td colSpan={accountOverviewColumns.length}>
+                          <ExpandedAccountCard
+                            row={row}
+                            hasPrices={hasPrices}
+                            locale={i18n.language}
+                            t={t}
+                            summaryMetrics={summaryMetrics}
+                            isFocused={isFocused}
+                            quotaState={accountQuotaStates[row.account]}
+                            onToggle={() => toggleAccountExpanded(row.id, row.account)}
+                            onFocus={() => focusAccount(row.account)}
+                            onRefreshQuota={() => void loadAccountQuota(row.account, true)}
+                          />
+                        </td>
+                      </tr>
+                    );
                   }
 
-                  const isActive = accountSort.key === column.sortKey;
-                  const SortIcon = isActive
-                    ? accountSort.direction === 'desc'
-                      ? IconChevronDown
-                      : IconChevronUp
-                    : null;
-
                   return (
-                    <th
-                      key={column.key}
-                      aria-sort={
-                        isActive
-                          ? accountSort.direction === 'desc'
-                            ? 'descending'
-                            : 'ascending'
-                          : 'none'
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={[
-                          styles.sortableHeaderButton,
-                          isActive ? styles.sortableHeaderButtonActive : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        onClick={() => handleAccountSort(column.sortKey!)}
-                      >
-                        <span>{column.label}</span>
-                        <span className={styles.sortIndicator} aria-hidden="true">
-                          {SortIcon ? <SortIcon size={14} /> : null}
-                        </span>
-                      </button>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {accountPagination.pageItems.map((row) => {
-                const isExpanded = Boolean(expandedAccounts[row.id]);
-                const isFocused = focusedAccount === row.account;
-                const summaryMetrics = buildAccountSummaryMetrics(row, hasPrices, i18n.language, t);
-
-                if (isExpanded) {
-                  return (
-                    <tr key={row.id} className={styles.expandedAccountCardRow}>
-                      <td colSpan={accountOverviewColumns.length}>
-                        <ExpandedAccountCard
+                    <tr key={row.id} className={isFocused ? styles.focusedRow : undefined}>
+                      <td>
+                        <AccountSummaryPrimary
                           row={row}
-                          hasPrices={hasPrices}
-                          locale={i18n.language}
-                          t={t}
-                          summaryMetrics={summaryMetrics}
-                          isFocused={isFocused}
-                          quotaState={accountQuotaStates[row.account]}
+                          expanded={false}
                           onToggle={() => toggleAccountExpanded(row.id, row.account)}
-                          onFocus={() => focusAccount(row.account)}
-                          onRefreshQuota={() => void loadAccountQuota(row.account, true)}
                         />
+                      </td>
+                      {summaryMetrics.map((metric) => (
+                        <td key={metric.key} className={metric.valueClassName}>
+                          {metric.value}
+                        </td>
+                      ))}
+                      <td>
+                        <button
+                          type="button"
+                          className={styles.inlineActionButton}
+                          onClick={() => focusAccount(row.account)}
+                        >
+                          {isFocused
+                            ? t('monitoring.restore_account_scope')
+                            : t('monitoring.focus_account')}
+                        </button>
                       </td>
                     </tr>
                   );
-                }
-
-                return (
-                  <tr key={row.id} className={isFocused ? styles.focusedRow : undefined}>
-                    <td>
-                      <AccountSummaryPrimary
-                        row={row}
-                        expanded={false}
-                        onToggle={() => toggleAccountExpanded(row.id, row.account)}
-                      />
-                    </td>
-                    {summaryMetrics.map((metric) => (
-                      <td key={metric.key} className={metric.valueClassName}>
-                        {metric.value}
-                      </td>
-                    ))}
-                    <td>
-                      <button
-                        type="button"
-                        className={styles.inlineActionButton}
-                        onClick={() => focusAccount(row.account)}
-                      >
-                        {isFocused
-                          ? t('monitoring.restore_account_scope')
-                          : t('monitoring.focus_account')}
-                      </button>
+                })}
+                {sortedAccountRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={accountOverviewColumns.length}>
+                      <div className={styles.emptyTable}>
+                        {hasSearchFilter
+                          ? t('monitoring.no_filtered_data')
+                          : t('monitoring.no_data')}
+                      </div>
                     </td>
                   </tr>
-                );
-              })}
-              {sortedAccountRows.length === 0 ? (
-                <tr>
-                  <td colSpan={accountOverviewColumns.length}>
-                    <div className={styles.emptyTable}>
-                      {hasSearchFilter ? t('monitoring.no_filtered_data') : t('monitoring.no_data')}
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        ) : sortedAccountRows.length > 0 ? (
+          <div className={styles.accountOverviewCardGrid}>
+            {accountPagination.pageItems.map((row) => {
+              const authState = accountAuthStateByRowId.get(row.id);
+              if (!authState) return null;
+
+              return (
+                <AccountOverviewCard
+                  key={row.id}
+                  row={row}
+                  authState={authState}
+                  hasPrices={hasPrices}
+                  locale={i18n.language}
+                  t={t}
+                  isExpanded={Boolean(expandedAccounts[row.id])}
+                  isFocused={focusedAccount === row.account}
+                  statusData={accountStatusDataByRowId.get(row.id) ?? emptyAccountStatusData}
+                  quotaState={accountQuotaStates[row.account]}
+                  statusUpdating={accountStatusUpdating[row.id] === true}
+                  onToggle={() => toggleAccountExpanded(row.id, row.account)}
+                  onFocus={() => focusAccount(row.account)}
+                  onToggleEnabled={(enabled) => void handleAccountStatusToggle(row, enabled)}
+                  onRefreshQuota={() => void loadAccountQuota(row.account, true)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className={styles.emptyTable}>
+            {hasSearchFilter ? t('monitoring.no_filtered_data') : t('monitoring.no_data')}
+          </div>
+        )}
         <PaginationControls
           count={sortedAccountRows.length}
           currentPage={accountPagination.currentPage}
@@ -2272,19 +2921,19 @@ export function MonitoringCenterPage() {
           startItem={accountPagination.startItem}
           endItem={accountPagination.endItem}
           pageSize={accountPageSize}
-          pageSizeOptions={ACCOUNT_PAGE_SIZE_OPTIONS}
-          onPageChange={setAccountPage}
+          pageSizeOptions={accountPageSizeOptions}
+          onPageChange={handleAccountPageChange}
           onPageSizeChange={handleAccountPageSizeChange}
           t={t}
         />
-      </Panel>
+      </MonitoringPanel>
 
-      <Panel
+      <MonitoringPanel
         title={t('monitoring.realtime_table_title')}
         subtitle={t('monitoring.realtime_table_desc')}
         className={styles.realtimePanel}
         extra={
-          <div className={styles.inlineMetrics}>
+          <div className={`${styles.inlineMetrics} ${styles.realtimeHeaderActions}`}>
             <span>{`${t('monitoring.log_rows')}: ${realtimeLogRows.length}`}</span>
             <span>{`${t('monitoring.recent_failures')}: ${scopedFailureCount}`}</span>
             <button
@@ -2413,7 +3062,7 @@ export function MonitoringCenterPage() {
           onPageSizeChange={handleRealtimePageSizeChange}
           t={t}
         />
-      </Panel>
+      </MonitoringPanel>
 
       <Modal
         open={isCustomRangeModalOpen}

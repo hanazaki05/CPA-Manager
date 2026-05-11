@@ -37,3 +37,7 @@ settings.local.json
 TODO.md
 
 /bin/tmp/
+/bin/cpa-manager
+/data/usage.sqlite*
+/run/*.pid
+/run/*.log

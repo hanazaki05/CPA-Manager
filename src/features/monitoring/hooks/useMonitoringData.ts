@@ -46,7 +46,7 @@ const isValidCustomTimeRange = (
       range.startMs <= range.endMs
   );
 
-const getRangeBounds = (
+export const getRangeBounds = (
   range: MonitoringTimeRange,
   nowMs: number,
   customRange?: MonitoringCustomTimeRange | null
@@ -775,7 +775,7 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
 
     existing.rows.push(row);
     existing.authLabels.add(row.authLabel);
-    existing.authIndices.add(row.authIndexMasked);
+    existing.authIndices.add(row.authIndex);
     existing.channels.add(row.channel);
     existing.totalCalls += 1;
     existing.successCalls += row.failed ? 0 : 1;
