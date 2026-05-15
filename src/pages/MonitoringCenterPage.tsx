@@ -80,6 +80,7 @@ import {
   buildMonitoringStatusBlockAriaLabel,
   getNextMonitoringStatusBlockIndex,
 } from '@/features/monitoring/healthStatusAccessibility';
+import { buildRealtimeSourceDisplay } from '@/features/monitoring/realtimeSourceDisplay';
 import { MonitoringPanel } from '@/features/monitoring/components/MonitoringPanel';
 import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
@@ -3425,76 +3426,81 @@ export function MonitoringCenterPage() {
               </tr>
             </thead>
             <tbody>
-              {realtimePagination.pageItems.map((row) => (
-                <tr key={row.id} className={row.failed ? styles.logRowFailed : undefined}>
-                  <td>
-                    <div className={styles.logTypeCell}>
-                      <span
-                        className={[
-                          styles.logTypeIcon,
-                          row.failed ? styles.logTypeIconFailed : styles.logTypeIconSuccess,
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        aria-hidden="true"
-                      />
-                      <div className={styles.primaryCell}>
-                        <span>{row.provider}</span>
-                        <small>{row.account || row.authLabel || row.accountMasked || '-'}</small>
+              {realtimePagination.pageItems.map((row) => {
+                const sourceDisplay = buildRealtimeSourceDisplay(row, t);
+                return (
+                  <tr key={row.id} className={row.failed ? styles.logRowFailed : undefined}>
+                    <td>
+                      <div className={styles.logTypeCell}>
+                        <span
+                          className={[
+                            styles.logTypeIcon,
+                            row.failed ? styles.logTypeIconFailed : styles.logTypeIconSuccess,
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          aria-hidden="true"
+                        />
+                        <div className={styles.primaryCell}>
+                          <span>{sourceDisplay.primary}</span>
+                          {sourceDisplay.meta ? <small>{sourceDisplay.meta}</small> : null}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <div className={styles.primaryCell}>
-                      <span className={styles.monoCell}>{row.model}</span>
-                      <small className={styles.monoCell}>{buildRealtimeMetaText(row)}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className={styles.recentStatusCell}>
-                      <RecentPattern pattern={row.recentPattern} variant="plain" />
-                    </div>
-                  </td>
-                  <td>
-                    <StatusBadge tone={row.failed ? 'bad' : 'good'}>
-                      {row.failed ? t('monitoring.result_failed') : t('monitoring.result_success')}
-                    </StatusBadge>
-                  </td>
-                  <td
-                    className={
-                      row.successRate >= 0.95
-                        ? styles.goodText
-                        : row.successRate >= 0.85
-                          ? styles.warnText
-                          : styles.badText
-                    }
-                  >
-                    {formatPercent(row.successRate)}
-                  </td>
-                  <td>{formatCompactNumber(row.requestCount)}</td>
-                  <td>
-                    <span
+                    </td>
+                    <td>
+                      <div className={styles.primaryCell}>
+                        <span className={styles.monoCell}>{row.model}</span>
+                        <small className={styles.monoCell}>{buildRealtimeMetaText(row)}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div className={styles.recentStatusCell}>
+                        <RecentPattern pattern={row.recentPattern} variant="plain" />
+                      </div>
+                    </td>
+                    <td>
+                      <StatusBadge tone={row.failed ? 'bad' : 'good'}>
+                        {row.failed
+                          ? t('monitoring.result_failed')
+                          : t('monitoring.result_success')}
+                      </StatusBadge>
+                    </td>
+                    <td
                       className={
-                        row.latencyMs !== null && row.latencyMs >= 30000
-                          ? styles.badText
-                          : row.latencyMs !== null && row.latencyMs >= 15000
+                        row.successRate >= 0.95
+                          ? styles.goodText
+                          : row.successRate >= 0.85
                             ? styles.warnText
-                            : undefined
+                            : styles.badText
                       }
                     >
-                      {formatDurationMs(row.latencyMs, { locale: i18n.language })}
-                    </span>
-                  </td>
-                  <td>{new Date(row.timestampMs).toLocaleString(i18n.language)}</td>
-                  <td>
-                    <div className={styles.primaryCell}>
-                      <span>{formatCompactNumber(row.totalTokens)}</span>
-                      <small>{`I ${formatCompactNumber(row.inputTokens)} · O ${formatCompactNumber(row.outputTokens)} · C ${formatCompactNumber(row.cachedTokens)}`}</small>
-                    </div>
-                  </td>
-                  <td>{hasPrices ? formatUsd(row.totalCost) : '--'}</td>
-                </tr>
-              ))}
+                      {formatPercent(row.successRate)}
+                    </td>
+                    <td>{formatCompactNumber(row.requestCount)}</td>
+                    <td>
+                      <span
+                        className={
+                          row.latencyMs !== null && row.latencyMs >= 30000
+                            ? styles.badText
+                            : row.latencyMs !== null && row.latencyMs >= 15000
+                              ? styles.warnText
+                              : undefined
+                        }
+                      >
+                        {formatDurationMs(row.latencyMs, { locale: i18n.language })}
+                      </span>
+                    </td>
+                    <td>{new Date(row.timestampMs).toLocaleString(i18n.language)}</td>
+                    <td>
+                      <div className={styles.primaryCell}>
+                        <span>{formatCompactNumber(row.totalTokens)}</span>
+                        <small>{`I ${formatCompactNumber(row.inputTokens)} · O ${formatCompactNumber(row.outputTokens)} · C ${formatCompactNumber(row.cachedTokens)}`}</small>
+                      </div>
+                    </td>
+                    <td>{hasPrices ? formatUsd(row.totalCost) : '--'}</td>
+                  </tr>
+                );
+              })}
               {realtimeLogRows.length === 0 ? (
                 <tr>
                   <td colSpan={10}>{renderMonitoringEmptyState()}</td>
