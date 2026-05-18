@@ -441,6 +441,27 @@ export type MonitoringAccountRow = {
   models: MonitoringAccountModelSpendRow[];
 };
 
+export type MonitoringApiKeyModelSpendRow = MonitoringAccountModelSpendRow;
+
+export type MonitoringApiKeyRow = {
+  id: string;
+  apiKeyHash: string;
+  apiKeyLabel: string;
+  apiKeyMasked: string;
+  totalCalls: number;
+  successCalls: number;
+  failureCalls: number;
+  successRate: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  averageLatencyMs: number | null;
+  lastSeenAt: number;
+  models: MonitoringApiKeyModelSpendRow[];
+};
+
 export type MonitoringRealtimeRow = {
   id: string;
   account: string;
@@ -928,6 +949,156 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
           ),
       };
     })
+    .sort(
+      (left, right) =>
+        right.lastSeenAt - left.lastSeenAt ||
+        right.totalCalls - left.totalCalls ||
+        right.totalCost - left.totalCost
+    );
+};
+
+const shouldPreferApiKeyAlias = (label: string, masked: string) =>
+  Boolean(label) && label !== masked && !label.startsWith('sha256:');
+
+export const buildApiKeyRows = (rows: MonitoringEventRow[]): MonitoringApiKeyRow[] => {
+  const grouped = new Map<
+    string,
+    {
+      id: string;
+      apiKeyHash: string;
+      apiKeyLabel: string;
+      apiKeyMasked: string;
+      modelMap: Map<
+        string,
+        {
+          model: string;
+          totalCalls: number;
+          successCalls: number;
+          failureCalls: number;
+          inputTokens: number;
+          outputTokens: number;
+          cachedTokens: number;
+          totalTokens: number;
+          totalCost: number;
+          lastSeenAt: number;
+        }
+      >;
+      totalCalls: number;
+      successCalls: number;
+      failureCalls: number;
+      inputTokens: number;
+      outputTokens: number;
+      cachedTokens: number;
+      totalTokens: number;
+      totalCost: number;
+      latencySum: number;
+      latencyCount: number;
+      lastSeenAt: number;
+    }
+  >();
+
+  rows.forEach((row) => {
+    const apiKeyGroupKey = row.apiKeyHash || row.apiKeyLabel || row.apiKeyMasked || '-';
+    const existing = grouped.get(apiKeyGroupKey) ?? {
+      id: apiKeyGroupKey,
+      apiKeyHash: row.apiKeyHash,
+      apiKeyLabel: row.apiKeyLabel || row.apiKeyMasked || '-',
+      apiKeyMasked: row.apiKeyMasked || row.apiKeyLabel || '-',
+      modelMap: new Map(),
+      totalCalls: 0,
+      successCalls: 0,
+      failureCalls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedTokens: 0,
+      totalTokens: 0,
+      totalCost: 0,
+      latencySum: 0,
+      latencyCount: 0,
+      lastSeenAt: 0,
+    };
+
+    if (!existing.apiKeyHash && row.apiKeyHash) {
+      existing.apiKeyHash = row.apiKeyHash;
+    }
+    if (!existing.apiKeyMasked && row.apiKeyMasked) {
+      existing.apiKeyMasked = row.apiKeyMasked;
+    }
+    if (
+      shouldPreferApiKeyAlias(row.apiKeyLabel, row.apiKeyMasked) &&
+      !shouldPreferApiKeyAlias(existing.apiKeyLabel, existing.apiKeyMasked)
+    ) {
+      existing.apiKeyLabel = row.apiKeyLabel;
+    }
+
+    existing.totalCalls += 1;
+    existing.successCalls += row.failed ? 0 : 1;
+    existing.failureCalls += row.failed ? 1 : 0;
+    existing.inputTokens += row.inputTokens;
+    existing.outputTokens += row.outputTokens;
+    existing.cachedTokens += row.cachedTokens;
+    existing.totalTokens += row.totalTokens;
+    existing.totalCost += row.totalCost;
+    existing.lastSeenAt = Math.max(existing.lastSeenAt, row.timestampMs);
+
+    if (row.latencyMs !== null) {
+      existing.latencySum += row.latencyMs;
+      existing.latencyCount += 1;
+    }
+
+    const modelEntry = existing.modelMap.get(row.model) ?? {
+      model: row.model,
+      totalCalls: 0,
+      successCalls: 0,
+      failureCalls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedTokens: 0,
+      totalTokens: 0,
+      totalCost: 0,
+      lastSeenAt: 0,
+    };
+
+    modelEntry.totalCalls += 1;
+    modelEntry.successCalls += row.failed ? 0 : 1;
+    modelEntry.failureCalls += row.failed ? 1 : 0;
+    modelEntry.inputTokens += row.inputTokens;
+    modelEntry.outputTokens += row.outputTokens;
+    modelEntry.cachedTokens += row.cachedTokens;
+    modelEntry.totalTokens += row.totalTokens;
+    modelEntry.totalCost += row.totalCost;
+    modelEntry.lastSeenAt = Math.max(modelEntry.lastSeenAt, row.timestampMs);
+    existing.modelMap.set(row.model, modelEntry);
+
+    grouped.set(apiKeyGroupKey, existing);
+  });
+
+  return Array.from(grouped.values())
+    .map((item) => ({
+      id: item.id,
+      apiKeyHash: item.apiKeyHash,
+      apiKeyLabel: item.apiKeyLabel || item.apiKeyMasked || '-',
+      apiKeyMasked: item.apiKeyMasked || item.apiKeyLabel || '-',
+      totalCalls: item.totalCalls,
+      successCalls: item.successCalls,
+      failureCalls: item.failureCalls,
+      successRate: item.totalCalls > 0 ? item.successCalls / item.totalCalls : 1,
+      inputTokens: item.inputTokens,
+      outputTokens: item.outputTokens,
+      cachedTokens: item.cachedTokens,
+      totalTokens: item.totalTokens,
+      totalCost: item.totalCost,
+      averageLatencyMs: item.latencyCount > 0 ? item.latencySum / item.latencyCount : null,
+      lastSeenAt: item.lastSeenAt,
+      models: Array.from(item.modelMap.values())
+        .map((model) => ({
+          ...model,
+          successRate: model.totalCalls > 0 ? model.successCalls / model.totalCalls : 1,
+        }))
+        .sort(
+          (left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls
+        ),
+    }))
     .sort(
       (left, right) =>
         right.lastSeenAt - left.lastSeenAt ||

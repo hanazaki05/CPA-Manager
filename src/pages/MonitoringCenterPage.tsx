@@ -32,6 +32,7 @@ import {
   IconFileText,
   IconInfo,
   IconInbox,
+  IconKey,
   IconMoreVertical,
   IconRefreshCw,
   IconSearch,
@@ -42,10 +43,13 @@ import {
 } from '@/components/ui/icons';
 import {
   buildAccountRows,
+  buildApiKeyRows,
   buildMonitoringSummary,
   buildRealtimeMonitorRows,
   getRangeBounds,
+  type MonitoringAccountModelSpendRow,
   type MonitoringAccountRow,
+  type MonitoringApiKeyRow,
   type MonitoringCustomTimeRange,
   type MonitoringEventRow,
   type MonitoringStatusTone,
@@ -350,6 +354,71 @@ const buildAccountOptionLabel = (row: MonitoringAccountRow) => {
 
 const buildAccountSummaryMetrics = (
   row: MonitoringAccountRow,
+  hasPrices: boolean,
+  locale: string,
+  t: TFunction
+): AccountSummaryMetric[] => [
+  {
+    key: 'total-calls',
+    label: t('monitoring.total_calls'),
+    value: formatCompactNumber(row.totalCalls),
+  },
+  {
+    key: 'success-calls',
+    label: t('monitoring.success_calls'),
+    value: formatCompactNumber(row.successCalls),
+    valueClassName: styles.goodText,
+  },
+  {
+    key: 'failure-calls',
+    label: t('monitoring.failure_calls'),
+    value: formatCompactNumber(row.failureCalls),
+    valueClassName: row.failureCalls > 0 ? styles.badText : undefined,
+  },
+  {
+    key: 'total-tokens',
+    label: t('monitoring.total_tokens'),
+    value: formatCompactNumber(row.totalTokens),
+  },
+  {
+    key: 'input-tokens',
+    label: t('monitoring.input_tokens'),
+    value: formatCompactNumber(row.inputTokens),
+  },
+  {
+    key: 'output-tokens',
+    label: t('monitoring.output_tokens'),
+    value: formatCompactNumber(row.outputTokens),
+  },
+  {
+    key: 'cached-tokens',
+    label: t('monitoring.cached_tokens'),
+    value: formatCompactNumber(row.cachedTokens),
+  },
+  {
+    key: 'estimated-cost',
+    label: t('monitoring.estimated_cost'),
+    value: hasPrices ? formatUsd(row.totalCost) : '--',
+  },
+  {
+    key: 'latest-request-time',
+    label: t('monitoring.latest_request_time'),
+    value: new Date(row.lastSeenAt).toLocaleString(locale),
+  },
+];
+
+const buildApiKeySecondaryText = (row: MonitoringApiKeyRow) => {
+  if (row.apiKeyLabel && row.apiKeyMasked && row.apiKeyLabel !== row.apiKeyMasked) {
+    return row.apiKeyMasked;
+  }
+  if (row.apiKeyHash) {
+    return `sha256:${row.apiKeyHash.slice(0, 12)}`;
+  }
+  return '';
+};
+
+const buildApiKeySummaryMetrics = (
+  row: MonitoringApiKeyRow,
   hasPrices: boolean,
   locale: string,
   t: TFunction
@@ -1362,7 +1431,7 @@ function AccountModelUsageList({
   t,
   limit = 2,
 }: {
-  row: MonitoringAccountRow;
+  row: { id: string; models: MonitoringAccountModelSpendRow[] };
   hasPrices: boolean;
   locale: string;
   t: TFunction;
@@ -1478,7 +1547,7 @@ function AccountModelUsageTable({
   t,
   limit = 2,
 }: {
-  row: MonitoringAccountRow;
+  row: { id: string; models: MonitoringAccountModelSpendRow[] };
   hasPrices: boolean;
   locale: string;
   t: TFunction;
@@ -1549,6 +1618,65 @@ function AccountModelUsageTable({
         <div className={styles.emptyBlockSmall}>{t('monitoring.account_overview_no_models')}</div>
       )}
     </section>
+  );
+}
+
+function ApiKeySummaryPrimary({
+  row,
+  expanded,
+  onToggle,
+}: {
+  row: MonitoringApiKeyRow;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const secondaryText = buildApiKeySecondaryText(row);
+  const keyLabel = row.apiKeyLabel || row.apiKeyMasked || '-';
+
+  return (
+    <button
+      type="button"
+      className={[styles.accountButton, expanded ? styles.expandedAccountButton : '']
+        .filter(Boolean)
+        .join(' ')}
+      onClick={onToggle}
+      aria-expanded={expanded}
+      title={keyLabel}
+    >
+      <span className={styles.accountExpandGlyph} aria-hidden="true">
+        {expanded ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
+      </span>
+      <span className={styles.accountIdentityLine}>
+        <span className={styles.apiKeyIcon} aria-hidden="true">
+          <IconKey size={13} />
+        </span>
+        <span className={styles.accountButtonLabel}>{keyLabel}</span>
+      </span>
+      {secondaryText ? <small>{secondaryText}</small> : null}
+    </button>
+  );
+}
+
+function ApiKeyExpandedDetails({
+  row,
+  hasPrices,
+  locale,
+  t,
+}: {
+  row: MonitoringApiKeyRow;
+  hasPrices: boolean;
+  locale: string;
+  t: TFunction;
+}) {
+  const summaryMetrics = buildApiKeySummaryMetrics(row, hasPrices, locale, t);
+
+  return (
+    <div className={styles.apiKeyExpandedDetails}>
+      <div className={styles.accountStructureModelPanel}>
+        <AccountTokenMetricGrid metrics={summaryMetrics} t={t} variant="table" />
+        <AccountModelUsageTable row={row} hasPrices={hasPrices} locale={locale} t={t} />
+      </div>
+    </div>
   );
 }
 
@@ -1768,6 +1896,7 @@ export function MonitoringCenterPage() {
   const [selectedApiKeyHash, setSelectedApiKeyHash] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>('all');
   const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({});
+  const [expandedApiKeys, setExpandedApiKeys] = useState<Record<string, boolean>>({});
   const [focusedAccount, setFocusedAccount] = useState<string | null>(null);
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
   const [isCustomRangeModalOpen, setIsCustomRangeModalOpen] = useState(false);
@@ -1795,6 +1924,8 @@ export function MonitoringCenterPage() {
     card: initialAccountOverviewUiState.current.cardPagination.pageSize,
   }));
   const [accountStatusUpdating, setAccountStatusUpdating] = useState<Record<string, boolean>>({});
+  const [apiKeyPage, setApiKeyPage] = useState(1);
+  const [apiKeyPageSize, setApiKeyPageSize] = useState<number>(DEFAULT_ACCOUNT_PAGE_SIZE);
   const [realtimePage, setRealtimePage] = useState(1);
   const [realtimePageSize, setRealtimePageSize] = useState(DEFAULT_REALTIME_PAGE_SIZE);
   const focusSnapshotRef = useRef<FocusSnapshot | null>(null);
@@ -2099,6 +2230,7 @@ export function MonitoringCenterPage() {
 
   const scopedSummary = useMemo(() => buildMonitoringSummary(scopedStatsRows), [scopedStatsRows]);
   const accountRows = useMemo(() => buildAccountRows(scopedRows), [scopedRows]);
+  const apiKeyRows = useMemo(() => buildApiKeyRows(scopedRows), [scopedRows]);
   const accountStatusDataByRowId = useMemo(
     () => buildMonitoringAccountStatusDataMap(scopedRows, accountStatusBounds),
     [accountStatusBounds, scopedRows]
@@ -2124,6 +2256,10 @@ export function MonitoringCenterPage() {
     () => buildPaginationState(sortedAccountRows, accountPage, accountPageSize),
     [accountPage, accountPageSize, sortedAccountRows]
   );
+  const apiKeyPagination = useMemo(
+    () => buildPaginationState(apiKeyRows, apiKeyPage, apiKeyPageSize),
+    [apiKeyPage, apiKeyPageSize, apiKeyRows]
+  );
   const realtimePagination = useMemo(
     () => buildPaginationState(realtimeLogRows, realtimePage, realtimePageSize),
     [realtimeLogRows, realtimePage, realtimePageSize]
@@ -2134,6 +2270,7 @@ export function MonitoringCenterPage() {
       customStartInput,
       deferredSearch,
       selectedAccount,
+      selectedApiKeyHash,
       selectedChannel,
       selectedModel,
       selectedProvider,
@@ -2145,6 +2282,7 @@ export function MonitoringCenterPage() {
       customStartInput,
       deferredSearch,
       selectedAccount,
+      selectedApiKeyHash,
       selectedChannel,
       selectedModel,
       selectedProvider,
@@ -2161,6 +2299,7 @@ export function MonitoringCenterPage() {
       )
     ) {
       resetCurrentAccountPage();
+      setApiKeyPage(1);
       setRealtimePage(1);
     }
 
@@ -2237,6 +2376,19 @@ export function MonitoringCenterPage() {
         sortKey: 'lastSeenAt',
       },
       { key: 'action', label: t('common.action') },
+    ],
+    [t]
+  );
+
+  const apiKeyOverviewColumns = useMemo<AccountOverviewColumn[]>(
+    () => [
+      { key: 'api-key', label: t('monitoring.api_key_summary_col_key') },
+      { key: 'total-calls', label: t('monitoring.total_calls') },
+      { key: 'success-calls', label: t('monitoring.account_overview_col_success') },
+      { key: 'failure-calls', label: t('monitoring.account_overview_col_failure') },
+      { key: 'total-tokens', label: t('monitoring.total_tokens') },
+      { key: 'estimated-cost', label: t('monitoring.account_overview_col_cost') },
+      { key: 'latest-request-time', label: t('monitoring.latest_request_time') },
     ],
     [t]
   );
@@ -2396,6 +2548,13 @@ export function MonitoringCenterPage() {
     setSelectedStatus((previous) => (previous === 'failed' ? 'all' : 'failed'));
   }, []);
 
+  const toggleApiKeyExpanded = useCallback((apiKeyId: string) => {
+    setExpandedApiKeys((previous) => ({
+      ...previous,
+      [apiKeyId]: !previous[apiKeyId],
+    }));
+  }, []);
+
   const loadAccountQuota = useCallback(
     async (account: string, force: boolean = false) => {
       const currentState = accountQuotaStatesRef.current[account];
@@ -2549,6 +2708,11 @@ export function MonitoringCenterPage() {
     [accountOverviewMode, resetCurrentAccountPage]
   );
 
+  const handleApiKeyPageSizeChange = useCallback((pageSize: number) => {
+    setApiKeyPageSize(normalizeAccountOverviewPageSize(pageSize, 'table'));
+    setApiKeyPage(1);
+  }, []);
+
   const handleAccountStatusToggle = useCallback(
     async (row: MonitoringAccountRow, enabled: boolean) => {
       const authState = accountAuthStateByRowId.get(row.id);
@@ -2639,6 +2803,10 @@ export function MonitoringCenterPage() {
     },
     [setCurrentAccountPage]
   );
+
+  const handleApiKeyPageChange = useCallback((page: number) => {
+    setApiKeyPage(page);
+  }, []);
 
   const handlePriceModelChange = useCallback(
     (value: string) => {
@@ -3382,6 +3550,105 @@ export function MonitoringCenterPage() {
           pageSizeOptions={accountPageSizeOptions}
           onPageChange={handleAccountPageChange}
           onPageSizeChange={handleAccountPageSizeChange}
+          t={t}
+        />
+      </MonitoringPanel>
+
+      <MonitoringPanel
+        title={
+          <span className={styles.panelTitleWithHint}>
+            {t('monitoring.api_key_summary_title')}
+            <span title={t('monitoring.api_key_summary_description')}>
+              <IconInfo
+                size={14}
+                className={styles.panelTitleHintIcon}
+                aria-label={t('monitoring.api_key_summary_description')}
+              />
+            </span>
+          </span>
+        }
+        subtitle={t('monitoring.api_key_summary_desc')}
+        className={styles.apiKeyPanel}
+        extra={
+          <div className={styles.inlineMetrics}>
+            <span>{t('monitoring.api_key_summary_keys_count', { count: apiKeyRows.length })}</span>
+          </div>
+        }
+      >
+        <div className={`${styles.tableWrapper} ${styles.apiKeySummaryTableWrapper}`}>
+          <table className={`${styles.table} ${styles.apiKeySummaryTable}`}>
+            <colgroup>
+              {apiKeyOverviewColumns.map((column) => (
+                <col key={column.key} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                {apiKeyOverviewColumns.map((column) => (
+                  <th key={column.key}>{column.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {apiKeyPagination.pageItems.map((row) => {
+                const isExpanded = Boolean(expandedApiKeys[row.id]);
+                const keyMetrics = buildApiKeySummaryMetrics(row, hasPrices, i18n.language, t);
+                const keyMetricByKey = new Map(keyMetrics.map((metric) => [metric.key, metric]));
+
+                return (
+                  <Fragment key={row.id}>
+                    <tr className={styles.apiKeySummaryRow}>
+                      <td>
+                        <ApiKeySummaryPrimary
+                          row={row}
+                          expanded={isExpanded}
+                          onToggle={() => toggleApiKeyExpanded(row.id)}
+                        />
+                      </td>
+                      <td>{keyMetricByKey.get('total-calls')?.value ?? '--'}</td>
+                      <td className={keyMetricByKey.get('success-calls')?.valueClassName}>
+                        {keyMetricByKey.get('success-calls')?.value ?? '--'}
+                      </td>
+                      <td className={keyMetricByKey.get('failure-calls')?.valueClassName}>
+                        {keyMetricByKey.get('failure-calls')?.value ?? '--'}
+                      </td>
+                      <td>{keyMetricByKey.get('total-tokens')?.value ?? '--'}</td>
+                      <td>{keyMetricByKey.get('estimated-cost')?.value ?? '--'}</td>
+                      <td>{keyMetricByKey.get('latest-request-time')?.value ?? '--'}</td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr className={styles.apiKeyDetailRow}>
+                        <td colSpan={apiKeyOverviewColumns.length}>
+                          <ApiKeyExpandedDetails
+                            row={row}
+                            hasPrices={hasPrices}
+                            locale={i18n.language}
+                            t={t}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+              {apiKeyRows.length === 0 ? (
+                <tr>
+                  <td colSpan={apiKeyOverviewColumns.length}>{renderMonitoringEmptyState()}</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <PaginationControls
+          count={apiKeyRows.length}
+          currentPage={apiKeyPagination.currentPage}
+          totalPages={apiKeyPagination.totalPages}
+          startItem={apiKeyPagination.startItem}
+          endItem={apiKeyPagination.endItem}
+          pageSize={apiKeyPageSize}
+          pageSizeOptions={ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS}
+          onPageChange={handleApiKeyPageChange}
+          onPageSizeChange={handleApiKeyPageSizeChange}
           t={t}
         />
       </MonitoringPanel>

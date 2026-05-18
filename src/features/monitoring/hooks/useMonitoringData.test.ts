@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAccountRows,
+  buildApiKeyRows,
   buildApiKeyDisplayMap,
   buildMonitoringAuthMetaMap,
   type MonitoringEventRow,
@@ -63,6 +64,64 @@ describe('buildAccountRows', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].authIndices).toEqual(['auth-123456', 'auth-999999']);
+  });
+});
+
+describe('buildApiKeyRows', () => {
+  it('groups rows by api key and prefers alias labels in the summary row', () => {
+    const rows = buildApiKeyRows([
+      createMonitoringEventRow({
+        apiKeyHash: 'hash-1',
+        apiKeyLabel: 'sk-***-1',
+        apiKeyMasked: 'sk-***-1',
+        model: 'gpt-5',
+        totalCost: 0.25,
+      }),
+      createMonitoringEventRow({
+        id: 'row-2',
+        timestampMs: Date.parse('2026-05-09T03:12:43.000Z'),
+        apiKeyHash: 'hash-1',
+        apiKeyLabel: 'Team Alpha',
+        apiKeyMasked: 'sk-***-1',
+        model: 'gpt-4.1',
+        failed: true,
+        totalCost: 0.4,
+        inputTokens: 30,
+        outputTokens: 12,
+        cachedTokens: 5,
+        totalTokens: 47,
+      }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].apiKeyLabel).toBe('Team Alpha');
+    expect(rows[0].apiKeyMasked).toBe('sk-***-1');
+    expect(rows[0].totalCalls).toBe(2);
+    expect(rows[0].successCalls).toBe(1);
+    expect(rows[0].failureCalls).toBe(1);
+    expect(rows[0].totalCost).toBeCloseTo(0.65);
+    expect(rows[0].models.map((model) => model.model)).toEqual(['gpt-4.1', 'gpt-5']);
+  });
+
+  it('keeps unlabeled api key rows grouped by fallback identifier', () => {
+    const rows = buildApiKeyRows([
+      createMonitoringEventRow({
+        apiKeyHash: '',
+        apiKeyLabel: '',
+        apiKeyMasked: '',
+      }),
+      createMonitoringEventRow({
+        id: 'row-2',
+        apiKeyHash: '',
+        apiKeyLabel: '',
+        apiKeyMasked: '',
+        model: 'gpt-5.5',
+      }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].apiKeyLabel).toBe('-');
+    expect(rows[0].models).toHaveLength(2);
   });
 });
 
