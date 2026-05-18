@@ -3,6 +3,7 @@ import {
   buildAccountRows,
   buildApiKeyRows,
   buildApiKeyDisplayMap,
+  buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
   type MonitoringEventRow,
 } from './useMonitoringData';
@@ -100,18 +101,26 @@ describe('buildApiKeyRows', () => {
     expect(rows[0].successCalls).toBe(1);
     expect(rows[0].failureCalls).toBe(1);
     expect(rows[0].totalCost).toBeCloseTo(0.65);
+    expect(rows[0].successRate).toBe(0.5);
+    expect(rows[0].lastSeenAt).toBe(Date.parse('2026-05-09T03:12:43.000Z'));
     expect(rows[0].models.map((model) => model.model)).toEqual(['gpt-4.1', 'gpt-5']);
   });
 
-  it('keeps unlabeled api key rows grouped by fallback identifier', () => {
+  it('uses stable fallback groups for unknown client api keys', () => {
     const rows = buildApiKeyRows([
       createMonitoringEventRow({
+        sourceKey: 'source:alpha',
+        authIndex: 'auth-a',
+        authLabel: 'alpha',
         apiKeyHash: '',
         apiKeyLabel: '',
         apiKeyMasked: '',
       }),
       createMonitoringEventRow({
         id: 'row-2',
+        sourceKey: 'source:beta',
+        authIndex: 'auth-b',
+        authLabel: 'beta',
         apiKeyHash: '',
         apiKeyLabel: '',
         apiKeyMasked: '',
@@ -119,9 +128,28 @@ describe('buildApiKeyRows', () => {
       }),
     ]);
 
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.isUnknown)).toBe(true);
+    expect(rows[0].authLabels.length).toBeGreaterThan(0);
+    expect(rows[0].id).not.toBe(rows[1].id);
+  });
+});
+
+describe('buildRangeFilteredRows', () => {
+  it('applies api key hash filtering even when the search query is empty', () => {
+    const rows = buildRangeFilteredRows(
+      [
+        createMonitoringEventRow({ apiKeyHash: 'hash-a' }),
+        createMonitoringEventRow({ id: 'row-2', apiKeyHash: 'hash-b' }),
+      ],
+      'all',
+      null,
+      '',
+      'hash-b'
+    );
+
     expect(rows).toHaveLength(1);
-    expect(rows[0].apiKeyLabel).toBe('-');
-    expect(rows[0].models).toHaveLength(2);
+    expect(rows[0].apiKeyHash).toBe('hash-b');
   });
 });
 
@@ -152,5 +180,17 @@ describe('buildApiKeyDisplayMap', () => {
 
     expect(map.get(apiKeyHash)?.label).toBe('Team A');
     expect(map.get(apiKeyHash)?.masked).toMatch(/^sk/);
+  });
+
+  it('masks aliases that look like full secrets before showing them in the ui', () => {
+    const apiKey = 'sk-live-real-key';
+    const apiKeyHash = sha256Hex(apiKey);
+    const map = buildApiKeyDisplayMap(
+      [apiKey],
+      [{ apiKeyHash, alias: 'ghp_1234567890abcdef', updatedAtMs: 1 }]
+    );
+
+    expect(map.get(apiKeyHash)?.label).toContain('*');
+    expect(map.get(apiKeyHash)?.label).not.toContain('ghp_1234567890abcdef');
   });
 });

@@ -408,6 +408,17 @@ const buildAccountSummaryMetrics = (
 ];
 
 const buildApiKeySecondaryText = (row: MonitoringApiKeyRow) => {
+  if (row.isUnknown) {
+    if (row.authLabels.length > 0) {
+      return joinShort(row.authLabels, 2);
+    }
+    if (row.sourceLabels.length > 0) {
+      return joinShort(row.sourceLabels, 2);
+    }
+    if (row.channels.length > 0) {
+      return joinShort(row.channels, 2);
+    }
+  }
   if (row.apiKeyLabel && row.apiKeyMasked && row.apiKeyLabel !== row.apiKeyMasked) {
     return row.apiKeyMasked;
   }
@@ -1625,13 +1636,17 @@ function ApiKeySummaryPrimary({
   row,
   expanded,
   onToggle,
+  t,
 }: {
   row: MonitoringApiKeyRow;
   expanded: boolean;
   onToggle: () => void;
+  t: TFunction;
 }) {
   const secondaryText = buildApiKeySecondaryText(row);
-  const keyLabel = row.apiKeyLabel || row.apiKeyMasked || '-';
+  const keyLabel = row.isUnknown
+    ? t('monitoring.api_key_unknown_label')
+    : row.apiKeyLabel || row.apiKeyMasked || t('monitoring.api_key_unknown_label');
 
   return (
     <button
@@ -3603,6 +3618,7 @@ export function MonitoringCenterPage() {
                           row={row}
                           expanded={isExpanded}
                           onToggle={() => toggleApiKeyExpanded(row.id)}
+                          t={t}
                         />
                       </td>
                       <td>{keyMetricByKey.get('total-calls')?.value ?? '--'}</td>
