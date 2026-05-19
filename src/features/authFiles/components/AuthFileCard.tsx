@@ -122,6 +122,16 @@ export function AuthFileCard(props: AuthFileCardProps) {
     Boolean(rawStatusMessage) && !HEALTHY_STATUS_MESSAGES.has(rawStatusMessage.toLowerCase());
 
   const priorityValue = parsePriorityValue(file.priority ?? file['priority']);
+  const projectIdValue = (() => {
+    const raw =
+      file.project_id ??
+      file.projectId ??
+      file.gemini_virtual_project ??
+      file.geminiVirtualProject ??
+      file['gemini_virtual_project'];
+    if (typeof raw !== 'string') return '';
+    return raw.trim();
+  })();
   const noteValue = typeof file.note === 'string' ? file.note.trim() : '';
   const stateLabel = isRuntimeOnly
     ? t('auth_files.type_virtual') || '虚拟认证文件'
@@ -201,6 +211,12 @@ export function AuthFileCard(props: AuthFileCardProps) {
                 <span className={`${styles.metaValue} ${styles.priorityValue}`}>
                   {priorityValue}
                 </span>
+              </div>
+            )}
+            {projectIdValue && (
+              <div className={styles.metaItem} title={projectIdValue}>
+                <span className={styles.metaLabel}>{t('auth_files.project_id_display')}</span>
+                <span className={styles.metaValue}>{projectIdValue}</span>
               </div>
             )}
           </div>
