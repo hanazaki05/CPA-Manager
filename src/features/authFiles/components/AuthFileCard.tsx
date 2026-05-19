@@ -46,7 +46,6 @@ export type AuthFileCardProps = {
   disableControls: boolean;
   deleting: string | null;
   statusUpdating: Record<string, boolean>;
-  quotaFilterType: QuotaProviderType | null;
   statusBarCache: Map<string, AuthFileStatusBarData>;
   onShowModels: (file: AuthFileItem) => void;
   onDownload: (name: string) => void;
@@ -72,7 +71,6 @@ export function AuthFileCard(props: AuthFileCardProps) {
     disableControls,
     deleting,
     statusUpdating,
-    quotaFilterType,
     statusBarCache,
     onShowModels,
     onDownload,
@@ -94,9 +92,7 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const typeColor = getTypeColor(providerKey, resolvedTheme);
   const typeLabel = getTypeLabel(t, providerKey);
 
-  const quotaType =
-    quotaFilterType && resolveQuotaType(file) === quotaFilterType ? quotaFilterType : null;
-
+  const quotaType = resolveQuotaType(file);
   const showQuotaLayout = Boolean(quotaType) && !isRuntimeOnly && !compact;
 
   const providerCardClass =
