@@ -1645,6 +1645,7 @@
       "collector_mode_auto": "Auto",
       "collector_mode_http": "HTTP",
       "collector_mode_resp": "RESP",
+      "collector_mode_subscribe": "RESP Pub/Sub",
       "poll_interval_ms": "Collection Polling Interval (ms)",
       "poll_interval_hint": "Must be less than or equal to the CPA usage queue retention window. Current validation uses {{seconds}} seconds.",
       "batch_size": "Max Items per Batch",
