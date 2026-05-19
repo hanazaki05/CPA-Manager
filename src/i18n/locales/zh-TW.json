@@ -1669,6 +1669,7 @@
       "collector_mode_auto": "自動",
       "collector_mode_http": "HTTP",
       "collector_mode_resp": "RESP",
+      "collector_mode_subscribe": "RESP Pub/Sub",
       "poll_interval_ms": "採集輪詢間隔（毫秒）",
       "poll_interval_hint": "必須小於等於 CPA 用量佇列保留時間，目前按 {{seconds}} 秒驗證。",
       "batch_size": "每批最多拉取筆數",

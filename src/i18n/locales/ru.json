@@ -1640,6 +1640,7 @@
       "collector_mode_auto": "Авто",
       "collector_mode_http": "HTTP",
       "collector_mode_resp": "RESP",
+      "collector_mode_subscribe": "RESP Pub/Sub",
       "poll_interval_ms": "Интервал опроса сборщика (мс)",
       "poll_interval_hint": "Должен быть не больше окна хранения очереди CPA usage. Текущая проверка использует {{seconds}} сек.",
       "batch_size": "Максимум элементов в пакете",

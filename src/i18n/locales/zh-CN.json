@@ -1645,6 +1645,7 @@
       "collector_mode_auto": "自动",
       "collector_mode_http": "HTTP",
       "collector_mode_resp": "RESP",
+      "collector_mode_subscribe": "RESP Pub/Sub",
       "poll_interval_ms": "采集轮询间隔 (毫秒)",
       "poll_interval_hint": "必须小于等于 CPA 用量队列保留时间，当前按 {{seconds}} 秒校验。",
       "batch_size": "每批最多拉取条数",
