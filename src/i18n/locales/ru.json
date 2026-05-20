@@ -1494,6 +1494,7 @@
     "state_active": "Активно",
     "result_failed": "Ошибка",
     "result_success": "Успех",
+    "resolved_model_label": "resolved: {{model}}",
     "no_failures": "В выбранном диапазоне нет неуспешных вызовов.",
     "no_data": "В текущем фильтре нет данных о вызовах.",
     "no_filtered_data": "Текущий поисковый фильтр ничего не нашёл.",

@@ -224,6 +224,8 @@ func (s *Store) ensureUsageEventSnapshotColumns() error {
 		{name: "auth_provider_snapshot", definition: "text"},
 		{name: "auth_project_id_snapshot", definition: "text"},
 		{name: "auth_snapshot_at_ms", definition: "integer"},
+		{name: "requested_model", definition: "text"},
+		{name: "resolved_model", definition: "text"},
 	}
 	for _, column := range columns {
 		if _, ok := existing[column.name]; ok {
@@ -638,9 +640,10 @@ func (s *Store) InsertEvents(ctx context.Context, events []usage.Event) (InsertR
 		request_id, event_hash, timestamp_ms, timestamp, provider, model, endpoint, method, path,
 		auth_type, auth_index, source, source_hash, api_key_hash,
 		account_snapshot, auth_label_snapshot, auth_file_snapshot, auth_provider_snapshot, auth_project_id_snapshot, auth_snapshot_at_ms,
+		requested_model, resolved_model,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_tokens, total_tokens,
 		latency_ms, failed, raw_json, created_at_ms
-	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return InsertResult{}, err
 	}
@@ -674,6 +677,8 @@ func (s *Store) InsertEvents(ctx context.Context, events []usage.Event) (InsertR
 			nullString(event.AuthProviderSnapshot),
 			nullString(event.AuthProjectIDSnapshot),
 			nullPositiveInt64(event.AuthSnapshotAtMS),
+			nullString(event.RequestedModel),
+			nullString(event.ResolvedModel),
 			event.InputTokens,
 			event.OutputTokens,
 			event.ReasoningTokens,
@@ -720,6 +725,7 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 		request_id, event_hash, timestamp_ms, timestamp, provider, model, endpoint, method, path,
 		auth_type, auth_index, source, source_hash, api_key_hash,
 		account_snapshot, auth_label_snapshot, auth_file_snapshot, auth_provider_snapshot, auth_project_id_snapshot, auth_snapshot_at_ms,
+		requested_model, resolved_model,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_tokens, total_tokens,
 		latency_ms, failed, raw_json, created_at_ms
 		from usage_events
@@ -733,7 +739,7 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 	events := make([]usage.Event, 0)
 	for rows.Next() {
 		var event usage.Event
-		var requestID, provider, endpoint, method, path, authType, authIndex, source, sourceHash, apiKeyHash, accountSnapshot, authLabelSnapshot, authFileSnapshot, authProviderSnapshot, authProjectIDSnapshot, rawJSON sql.NullString
+		var requestID, provider, endpoint, method, path, authType, authIndex, source, sourceHash, apiKeyHash, accountSnapshot, authLabelSnapshot, authFileSnapshot, authProviderSnapshot, authProjectIDSnapshot, requestedModel, resolvedModel, rawJSON sql.NullString
 		var authSnapshotAt sql.NullInt64
 		var latency sql.NullInt64
 		var failed int
@@ -758,6 +764,8 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 			&authProviderSnapshot,
 			&authProjectIDSnapshot,
 			&authSnapshotAt,
+			&requestedModel,
+			&resolvedModel,
 			&event.InputTokens,
 			&event.OutputTokens,
 			&event.ReasoningTokens,
@@ -786,6 +794,8 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]usage.Event, err
 		event.AuthFileSnapshot = authFileSnapshot.String
 		event.AuthProviderSnapshot = authProviderSnapshot.String
 		event.AuthProjectIDSnapshot = authProjectIDSnapshot.String
+		event.RequestedModel = requestedModel.String
+		event.ResolvedModel = resolvedModel.String
 		if authSnapshotAt.Valid {
 			event.AuthSnapshotAtMS = authSnapshotAt.Int64
 		}
