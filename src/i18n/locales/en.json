@@ -1499,6 +1499,7 @@
     "state_active": "Active",
     "result_failed": "Failed",
     "result_success": "Success",
+    "resolved_model_label": "resolved: {{model}}",
     "no_failures": "No failed calls in the selected range.",
     "no_data": "No call data is available in the current filter scope.",
     "no_filtered_data": "No calls matched the current search filter.",

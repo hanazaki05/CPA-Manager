@@ -3739,6 +3739,11 @@ export function MonitoringCenterPage() {
                     <td>
                       <div className={styles.primaryCell}>
                         <span className={styles.monoCell}>{row.model}</span>
+                        {row.resolvedModel && row.resolvedModel !== row.model ? (
+                          <small className={styles.monoCell}>
+                            ↳ {t('monitoring.resolved_model_label', { model: row.resolvedModel })}
+                          </small>
+                        ) : null}
                         <small className={styles.monoCell}>{buildRealtimeMetaText(row)}</small>
                       </div>
                     </td>
