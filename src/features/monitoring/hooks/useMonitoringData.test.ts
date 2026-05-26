@@ -10,6 +10,7 @@ import {
 } from './useMonitoringData';
 import { sha256Hex } from '@/utils/apiKeyHash';
 import type { AuthFileItem } from '@/types';
+import { buildProviderAliasKey } from '@/utils/providerAliases';
 
 const createMonitoringEventRow = (
   overrides: Partial<MonitoringEventRow> = {}

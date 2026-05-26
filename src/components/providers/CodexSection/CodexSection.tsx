@@ -111,7 +111,13 @@ export function CodexSection({
 
             return (
               <Fragment>
-                <div className="item-title">{t('ai_providers.codex_item_title')}</div>
+                <div className="item-title">{item.alias || t('ai_providers.codex_item_title')}</div>
+                {item.alias && (
+                  <div className={styles.fieldRow}>
+                    <span className={styles.fieldLabel}>{t('ai_providers.codex_item_title')}:</span>
+                    <span className={styles.fieldValue}>{item.prefix || item.baseUrl || `#${index + 1}`}</span>
+                  </div>
+                )}
                 <div className={styles.fieldRow}>
                   <span className={styles.fieldLabel}>{t('common.api_key')}:</span>
                   <span className={styles.fieldValue}>{maskApiKey(item.apiKey)}</span>

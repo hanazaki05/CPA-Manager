@@ -81,6 +81,13 @@ type APIKeyAlias struct {
 	UpdatedAtMS int64  `json:"updatedAtMs"`
 }
 
+type ProviderAlias struct {
+	Provider    string `json:"provider"`
+	ProviderKey string `json:"providerKey"`
+	Alias       string `json:"alias"`
+	UpdatedAtMS int64  `json:"updatedAtMs"`
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -179,6 +186,13 @@ func (s *Store) init() error {
 			api_key_hash text primary key,
 			alias text not null,
 			updated_at_ms integer not null
+		)`,
+		`create table if not exists provider_aliases (
+			provider text not null,
+			provider_key text not null,
+			alias text not null,
+			updated_at_ms integer not null,
+			primary key (provider, provider_key)
 		)`,
 	}
 	for _, statement := range statements {
@@ -728,6 +742,109 @@ func (s *Store) DeleteAPIKeyAlias(ctx context.Context, apiKeyHash string) error 
 	}
 	_, err := s.db.ExecContext(ctx, `delete from api_key_aliases where api_key_hash = ?`, hash)
 	return err
+}
+
+func (s *Store) LoadProviderAliases(ctx context.Context) ([]ProviderAlias, error) {
+	rows, err := s.db.QueryContext(ctx, `select provider, provider_key, alias, updated_at_ms
+		from provider_aliases
+		order by provider, alias collate nocase, provider_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	aliases := []ProviderAlias{}
+	for rows.Next() {
+		var alias ProviderAlias
+		if err := rows.Scan(&alias.Provider, &alias.ProviderKey, &alias.Alias, &alias.UpdatedAtMS); err != nil {
+			return nil, err
+		}
+		aliases = append(aliases, alias)
+	}
+	return aliases, rows.Err()
+}
+
+func (s *Store) UpsertProviderAliases(ctx context.Context, aliases []ProviderAlias) error {
+	if len(aliases) == 0 {
+		return nil
+	}
+	now := time.Now().UnixMilli()
+	normalizedAliases := make([]ProviderAlias, 0, len(aliases))
+	for _, alias := range aliases {
+		normalized, err := normalizeProviderAlias(alias, now)
+		if err != nil {
+			return err
+		}
+		normalizedAliases = append(normalizedAliases, normalized)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, `insert into provider_aliases (
+		provider, provider_key, alias, updated_at_ms
+	) values (?, ?, ?, ?)
+	on conflict(provider, provider_key) do update set
+		alias = excluded.alias,
+		updated_at_ms = excluded.updated_at_ms`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, normalized := range normalizedAliases {
+		if _, err := stmt.ExecContext(
+			ctx,
+			normalized.Provider,
+			normalized.ProviderKey,
+			normalized.Alias,
+			normalized.UpdatedAtMS,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) DeleteProviderAlias(ctx context.Context, provider string, providerKey string) error {
+	normalizedProvider := normalizeProviderAliasProvider(provider)
+	normalizedKey := strings.ToLower(strings.TrimSpace(providerKey))
+	if normalizedProvider == "" || !validAPIKeyHash(normalizedKey) {
+		return errors.New("valid provider and providerKey are required")
+	}
+	_, err := s.db.ExecContext(ctx, `delete from provider_aliases where provider = ? and provider_key = ?`, normalizedProvider, normalizedKey)
+	return err
+}
+
+func normalizeProviderAlias(alias ProviderAlias, now int64) (ProviderAlias, error) {
+	provider := normalizeProviderAliasProvider(alias.Provider)
+	providerKey := strings.ToLower(strings.TrimSpace(alias.ProviderKey))
+	if provider == "" || !validAPIKeyHash(providerKey) {
+		return ProviderAlias{}, errors.New("valid provider and providerKey are required")
+	}
+	label := strings.TrimSpace(alias.Alias)
+	if label == "" {
+		return ProviderAlias{}, errors.New("alias is required")
+	}
+	if len([]rune(label)) > 120 {
+		return ProviderAlias{}, errors.New("alias must be 120 characters or less")
+	}
+	if alias.UpdatedAtMS <= 0 {
+		alias.UpdatedAtMS = now
+	}
+	alias.Provider = provider
+	alias.ProviderKey = providerKey
+	alias.Alias = label
+	return alias, nil
+}
+
+func normalizeProviderAliasProvider(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
 }
 
 func normalizeAPIKeyAlias(alias APIKeyAlias, now int64) (APIKeyAlias, error) {

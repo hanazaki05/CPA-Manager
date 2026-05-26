@@ -17,6 +17,7 @@ import type { ProviderKeyConfig } from '@/types';
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
 import { buildHeaderObject, headersToEntries, normalizeHeaderEntries } from '@/utils/headers';
 import { areKeyValueEntriesEqual, areModelEntriesEqual, areStringArraysEqual } from '@/utils/compare';
+import { loadProviderAliases, mergeProviderAliases, saveProviderAlias } from '@/utils/providerAliases';
 import type { VertexFormState } from '@/components/providers';
 import layoutStyles from './AiProvidersEditLayout.module.scss';
 
@@ -24,6 +25,7 @@ type LocationState = { fromAiProviders?: boolean } | null;
 
 const buildEmptyForm = (): VertexFormState => ({
   apiKey: '',
+  alias: '',
   prefix: '',
   baseUrl: '',
   proxyUrl: '',
@@ -51,6 +53,7 @@ const normalizeModelEntries = (entries: Array<{ name: string; alias: string }>) 
 
 type VertexFormBaseline = {
   apiKey: string;
+  alias: string;
   priority: number | null;
   prefix: string;
   baseUrl: string;
@@ -62,6 +65,7 @@ type VertexFormBaseline = {
 
 const buildVertexBaseline = (form: VertexFormState): VertexFormBaseline => ({
   apiKey: String(form.apiKey ?? '').trim(),
+  alias: String(form.alias ?? '').trim(),
   priority:
     form.priority !== undefined && Number.isFinite(form.priority) ? Math.trunc(form.priority) : null,
   prefix: String(form.prefix ?? '').trim(),
@@ -134,17 +138,29 @@ export function AiProvidersVertexEditPage() {
     setLoading(true);
     setError('');
 
-    Promise.all([fetchConfig('vertex-api-key'), providersApi.getVertexConfigs()])
-      .then(([configResult, vertexResult]) => {
+    Promise.allSettled([
+      fetchConfig('vertex-api-key'),
+      providersApi.getVertexConfigs(),
+      loadProviderAliases(),
+    ])
+      .then(([configResult, vertexResult, aliasResult]) => {
         if (cancelled) return;
 
-        const list = Array.isArray(vertexResult)
-          ? (vertexResult as ProviderKeyConfig[])
-          : Array.isArray(configResult)
-            ? (configResult as ProviderKeyConfig[])
+        if (configResult.status !== 'fulfilled' && vertexResult.status !== 'fulfilled') {
+          throw configResult.status === 'rejected' ? configResult.reason : vertexResult.reason;
+        }
+
+        const configValue = configResult.status === 'fulfilled' ? configResult.value : undefined;
+        const vertexValue = vertexResult.status === 'fulfilled' ? vertexResult.value : undefined;
+        const providerAliases = aliasResult.status === 'fulfilled' ? aliasResult.value : [];
+        const list = Array.isArray(vertexValue)
+          ? (vertexValue as ProviderKeyConfig[])
+          : Array.isArray(configValue)
+            ? (configValue as ProviderKeyConfig[])
             : [];
-        setConfigs(list);
-        updateConfigValue('vertex-api-key', list);
+        const mergedList = mergeProviderAliases('vertex', list, providerAliases);
+        setConfigs(mergedList);
+        updateConfigValue('vertex-api-key', mergedList);
         clearCache('vertex-api-key');
       })
       .catch((err: unknown) => {
@@ -211,6 +227,7 @@ export function AiProvidersVertexEditPage() {
   );
   const isDirty =
     baseline.apiKey !== form.apiKey.trim() ||
+    baseline.alias !== String(form.alias ?? '').trim() ||
     baseline.priority !== normalizedPriority ||
     baseline.prefix !== String(form.prefix ?? '').trim() ||
     baseline.baseUrl !== String(form.baseUrl ?? '').trim() ||
@@ -244,6 +261,7 @@ export function AiProvidersVertexEditPage() {
     try {
       const payload: ProviderKeyConfig = {
         apiKey: form.apiKey.trim(),
+        alias: form.alias?.trim() || undefined,
         priority:
           form.priority !== undefined && Number.isFinite(form.priority)
             ? Math.trunc(form.priority)
@@ -267,8 +285,11 @@ export function AiProvidersVertexEditPage() {
         editIndex !== null
           ? configs.map((item, idx) => (idx === editIndex ? payload : item))
           : [...configs, payload];
+      const aliasIndex = editIndex !== null ? editIndex : configs.length;
+      const aliasPayload = { ...payload, authIndex: form.authIndex };
 
       await providersApi.saveVertexConfigs(nextList);
+      await saveProviderAlias('vertex', aliasPayload, form.alias ?? '', aliasIndex);
       updateConfigValue('vertex-api-key', nextList);
       clearCache('vertex-api-key');
       showNotification(
@@ -359,6 +380,14 @@ export function AiProvidersVertexEditPage() {
                   {showApiKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
                 </button>
               }
+            />
+            <Input
+              label={t('ai_providers.provider_alias_label')}
+              placeholder={t('ai_providers.provider_alias_placeholder')}
+              hint={t('ai_providers.provider_alias_hint')}
+              value={form.alias ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, alias: e.target.value }))}
+              disabled={disableControls || saving}
             />
             <Input
               label={t('ai_providers.prefix_label')}

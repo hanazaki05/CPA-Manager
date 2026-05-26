@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCandidateUsageSourceIds,
   buildModelPriceIndex,
   calculateCost,
   collectUsageDetails,
@@ -96,6 +97,16 @@ describe('usage detail collection', () => {
     expect(detail.__modelName).toBe('gpt-5.4');
     expect(detail.__resolvedModel).toBe('gpt-5.5');
     expect(collectUsageDetailsWithEndpoint(usageData)[0].__resolvedModel).toBe('gpt-5.5');
+  });
+});
+
+describe('buildCandidateUsageSourceIds', () => {
+  it('includes legacy masked monitoring source candidates for historical usage rows', () => {
+    expect(
+      buildCandidateUsageSourceIds({
+        apiKey: 'sk-REWNJh11pmHXt5j3gzG7zidBsDy79uovY2yQfrMwmIJSBEWm',
+      })
+    ).toContain('m:m:******Wm');
   });
 });
 

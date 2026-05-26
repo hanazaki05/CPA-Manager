@@ -21,7 +21,7 @@ import {
 import { useAuthStore, useNotificationStore, useUsageServiceStore } from '@/stores';
 import styles from './VisualConfigEditor.module.scss';
 import { copyToClipboard } from '@/utils/clipboard';
-import { detectApiBaseFromLocation } from '@/utils/connection';
+import { buildUsageServiceBaseCandidates, detectApiBaseFromLocation } from '@/utils/connection';
 import type {
   PayloadFilterRule,
   PayloadHeaderEntry,
@@ -248,12 +248,8 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       return usageServiceBase;
     }
 
-    const candidates = Array.from(
-      new Set(
-        [apiBase, detectApiBaseFromLocation()]
-          .map((candidate) => normalizeUsageServiceBase(candidate || ''))
-          .filter(Boolean)
-      )
+    const candidates = buildUsageServiceBaseCandidates([apiBase, detectApiBaseFromLocation()]).map(
+      normalizeUsageServiceBase
     );
 
     for (const candidate of candidates) {

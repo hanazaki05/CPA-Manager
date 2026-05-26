@@ -91,6 +91,10 @@ type apiKeyAliasesRequest struct {
 	ActiveAPIKeyHashes []string            `json:"activeApiKeyHashes,omitempty"`
 }
 
+type providerAliasesRequest struct {
+	Items []store.ProviderAlias `json:"items"`
+}
+
 func New(cfg config.Config, store *store.Store, collector *collector.Manager) *Server {
 	return &Server{
 		cfg:       cfg,
@@ -124,6 +128,10 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/v0/management/api-key-aliases") {
 		s.withCORS(s.handleAPIKeyAliases)(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v0/management/provider-aliases") {
+		s.withCORS(s.handleProviderAliases)(w, r)
 		return
 	}
 	cleanUsagePath := strings.TrimRight(r.URL.Path, "/")
@@ -524,6 +532,58 @@ func (s *Server) handleAPIKeyAliases(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, basePath+"/") && r.Method == http.MethodDelete:
 		apiKeyHash := strings.TrimPrefix(path, basePath+"/")
 		if err := s.store.DeleteAPIKeyAlias(r.Context(), apiKeyHash); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleProviderAliases(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeIfConfigured(w, r) {
+		return
+	}
+
+	path := strings.TrimRight(r.URL.Path, "/")
+	const basePath = "/v0/management/provider-aliases"
+	switch {
+	case path == basePath && r.Method == http.MethodGet:
+		aliases, err := s.store.LoadProviderAliases(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": aliases})
+	case path == basePath && r.Method == http.MethodPut:
+		var req providerAliasesRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Items == nil {
+			writeError(w, http.StatusBadRequest, errors.New("provider aliases are required"))
+			return
+		}
+		if err := s.store.UpsertProviderAliases(r.Context(), req.Items); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		aliases, err := s.store.LoadProviderAliases(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": aliases})
+	case strings.HasPrefix(path, basePath+"/") && r.Method == http.MethodDelete:
+		rest := strings.TrimPrefix(path, basePath+"/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, errors.New("valid provider and providerKey are required"))
+			return
+		}
+		if err := s.store.DeleteProviderAlias(r.Context(), parts[0], parts[1]); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}

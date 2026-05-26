@@ -60,7 +60,7 @@ export function buildSourceInfoMap(input: SourceInfoMapInput): SourceInfoMap {
   };
 
   const providers: Array<{
-    items: Array<{ apiKey?: string; prefix?: string; authIndex?: string }>;
+    items: Array<{ apiKey?: string; alias?: string; prefix?: string; authIndex?: string }>;
     type: string;
     label: string;
   }> = [
@@ -74,7 +74,7 @@ export function buildSourceInfoMap(input: SourceInfoMapInput): SourceInfoMap {
     items.forEach((item, index) => {
       registerProvider(
         {
-          displayName: item.prefix?.trim() || `${label} #${index + 1}`,
+          displayName: item.alias?.trim() || item.prefix?.trim() || `${label} #${index + 1}`,
           type,
           identityKey: buildProviderIdentityKey(type, index),
         },
@@ -96,7 +96,11 @@ export function buildSourceInfoMap(input: SourceInfoMapInput): SourceInfoMap {
 
     registerProvider(
       {
-        displayName: provider.prefix?.trim() || provider.name || `OpenAI #${providerIndex + 1}`,
+        displayName:
+          provider.alias?.trim() ||
+          provider.prefix?.trim() ||
+          provider.name ||
+          `OpenAI #${providerIndex + 1}`,
         type: 'openai',
         identityKey: buildProviderIdentityKey('openai', providerIndex),
       },

@@ -27,6 +27,7 @@ const PROVIDER_KEY_FIELDS = [
   'api-key',
   'apiKey',
   ...AUTH_INDEX_FIELDS,
+  'alias',
   'priority',
   'prefix',
   'base-url',
@@ -51,6 +52,7 @@ const VERTEX_KEY_FIELDS = GEMINI_KEY_FIELDS;
 
 const OPENAI_PROVIDER_FIELDS = [
   'name',
+  'alias',
   'priority',
   'disabled',
   'prefix',
@@ -354,6 +356,7 @@ const serializeProviderKey = (config: ProviderKeyConfig) => {
   const payload: Record<string, unknown> = { 'api-key': config.apiKey };
   const authIndex = serializeAuthIndex(config.authIndex);
   if (authIndex) payload['auth-index'] = authIndex;
+  if (config.alias?.trim()) payload.alias = config.alias.trim();
   if (config.priority !== undefined) payload.priority = config.priority;
   if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
   if (config.baseUrl) payload['base-url'] = config.baseUrl;
@@ -397,6 +400,7 @@ const serializeVertexKey = (config: ProviderKeyConfig) => {
   const payload: Record<string, unknown> = { 'api-key': config.apiKey };
   const authIndex = serializeAuthIndex(config.authIndex);
   if (authIndex) payload['auth-index'] = authIndex;
+  if (config.alias?.trim()) payload.alias = config.alias.trim();
   if (config.priority !== undefined) payload.priority = config.priority;
   if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
   if (config.baseUrl) payload['base-url'] = config.baseUrl;
@@ -415,6 +419,7 @@ const serializeGeminiKey = (config: GeminiKeyConfig) => {
   const payload: Record<string, unknown> = { 'api-key': config.apiKey };
   const authIndex = serializeAuthIndex(config.authIndex);
   if (authIndex) payload['auth-index'] = authIndex;
+  if (config.alias?.trim()) payload.alias = config.alias.trim();
   if (config.priority !== undefined) payload.priority = config.priority;
   if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
   if (config.baseUrl) payload['base-url'] = config.baseUrl;
@@ -439,6 +444,7 @@ const serializeOpenAIProvider = (provider: OpenAIProviderConfig) => {
   };
   const authIndex = serializeAuthIndex(provider.authIndex);
   if (authIndex) payload['auth-index'] = authIndex;
+  if (provider.alias?.trim()) payload.alias = provider.alias.trim();
   if (provider.prefix?.trim()) payload.prefix = provider.prefix.trim();
   if (provider.disabled !== undefined) payload.disabled = provider.disabled;
   const headers = serializeHeaders(provider.headers);

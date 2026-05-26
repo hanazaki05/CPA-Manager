@@ -112,8 +112,14 @@ export function VertexSection({
             return (
               <Fragment>
                 <div className="item-title">
-                  {t('ai_providers.vertex_item_title')} #{index + 1}
+                  {item.alias || `${t('ai_providers.vertex_item_title')} #${index + 1}`}
                 </div>
+                {item.alias && (
+                  <div className={styles.fieldRow}>
+                    <span className={styles.fieldLabel}>{t('ai_providers.vertex_item_title')}:</span>
+                    <span className={styles.fieldValue}>{item.prefix || item.baseUrl || `#${index + 1}`}</span>
+                  </div>
+                )}
                 <div className={styles.fieldRow}>
                   <span className={styles.fieldLabel}>{t('common.api_key')}:</span>
                   <span className={styles.fieldValue}>{maskApiKey(item.apiKey)}</span>

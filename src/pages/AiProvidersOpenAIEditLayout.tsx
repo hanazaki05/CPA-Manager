@@ -12,6 +12,7 @@ import { normalizeAuthIndex } from '@/utils/authIndex';
 import { buildHeaderObject, headersToEntries, normalizeHeaderEntries } from '@/utils/headers';
 import { areKeyValueEntriesEqual, areModelEntriesEqual } from '@/utils/compare';
 import { buildApiKeyEntry } from '@/components/providers/utils';
+import { loadProviderAliases, mergeProviderAliases, saveProviderAlias } from '@/utils/providerAliases';
 import type { ModelEntry, OpenAIFormState } from '@/components/providers/types';
 import type { KeyTestStatus, OpenAIEditBaseline } from '@/stores/useOpenAIEditDraftStore';
 
@@ -44,6 +45,7 @@ export type OpenAIEditOutletContext = {
 
 const buildEmptyForm = (): OpenAIFormState => ({
   name: '',
+  alias: '',
   priority: undefined,
   prefix: '',
   baseUrl: '',
@@ -109,6 +111,7 @@ const normalizeApiKeyEntries = (entries: ApiKeyEntry[]) =>
 
 const buildOpenAIBaseline = (form: OpenAIFormState, testModel: string): OpenAIEditBaseline => ({
   name: String(form.name ?? '').trim(),
+  alias: String(form.alias ?? '').trim(),
   priority:
     form.priority !== undefined && Number.isFinite(form.priority) ? Math.trunc(form.priority) : null,
   prefix: String(form.prefix ?? '').trim(),
@@ -268,25 +271,26 @@ export function AiProvidersOpenAIEditLayout() {
       setLoading(true);
     }
 
-    providersApi
-      .getOpenAIProviders()
-      .then((value) => {
+    Promise.allSettled([providersApi.getOpenAIProviders(), loadProviderAliases()])
+      .then(async ([providerResult, aliasResult]) => {
         if (cancelled) return;
-        const nextProviders = value || [];
+        let value: OpenAIProviderConfig[];
+        if (providerResult.status === 'fulfilled') {
+          value = providerResult.value || [];
+        } else {
+          const fallback = await fetchConfig('openai-compatibility');
+          if (cancelled) return;
+          value = Array.isArray(fallback) ? (fallback as OpenAIProviderConfig[]) : [];
+        }
+        const providerAliases = aliasResult.status === 'fulfilled' ? aliasResult.value : [];
+        const nextProviders = mergeProviderAliases('openai', value, providerAliases);
         setProviders(nextProviders);
         updateConfigValue('openai-compatibility', nextProviders);
       })
-      .catch(async (err: unknown) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        try {
-          const fallback = await fetchConfig('openai-compatibility');
-          if (cancelled) return;
-          setProviders(Array.isArray(fallback) ? (fallback as OpenAIProviderConfig[]) : []);
-        } catch {
-          if (cancelled) return;
-          const message = getErrorMessage(err) || t('notification.refresh_failed');
-          showNotification(`${t('notification.load_failed')}: ${message}`, 'error');
-        }
+        const message = getErrorMessage(err) || t('notification.refresh_failed');
+        showNotification(`${t('notification.load_failed')}: ${message}`, 'error');
       })
       .finally(() => {
         if (cancelled) return;
@@ -306,6 +310,7 @@ export function AiProvidersOpenAIEditLayout() {
       const modelEntries = modelsToEntries(initialData.models);
       const seededForm: OpenAIFormState = {
         name: initialData.name,
+        alias: initialData.alias ?? '',
         priority: initialData.priority,
         prefix: initialData.prefix ?? '',
         baseUrl: initialData.baseUrl,
@@ -430,6 +435,7 @@ export function AiProvidersOpenAIEditLayout() {
     Boolean(draft?.initialized) &&
     baseline !== null &&
     (baseline.name !== form.name.trim() ||
+      baseline.alias !== form.alias.trim() ||
       baseline.priority !== normalizedPriority ||
       baseline.prefix !== form.prefix.trim() ||
       baseline.baseUrl !== form.baseUrl.trim() ||
@@ -475,6 +481,7 @@ export function AiProvidersOpenAIEditLayout() {
     try {
       const payload: OpenAIProviderConfig = {
         name,
+        alias: form.alias?.trim() || undefined,
         prefix: form.prefix?.trim() || undefined,
         baseUrl,
         headers: buildHeaderObject(form.headers),
@@ -483,6 +490,7 @@ export function AiProvidersOpenAIEditLayout() {
           proxyUrl: entry.proxyUrl?.trim() || undefined,
           authIndex: normalizeAuthIndex(entry.authIndex) ?? undefined,
           headers: entry.headers,
+          authIndex: entry.authIndex,
         })),
       };
       if (form.priority !== undefined && Number.isFinite(form.priority)) {
@@ -500,8 +508,10 @@ export function AiProvidersOpenAIEditLayout() {
         editIndex !== null
           ? providers.map((item, idx) => (idx === editIndex ? payload : item))
           : [...providers, payload];
+      const aliasIndex = editIndex !== null ? editIndex : providers.length;
 
       await providersApi.saveOpenAIProviders(nextList);
+      await saveProviderAlias('openai', payload, form.alias ?? '', aliasIndex);
 
       let syncedProviders = nextList;
       try {

@@ -8,6 +8,7 @@ export interface ModelEntry {
 
 export interface OpenAIFormState {
   name: string;
+  alias: string;
   priority?: number;
   prefix: string;
   baseUrl: string;
@@ -31,18 +32,21 @@ export interface AmpcodeFormState {
 }
 
 export type GeminiFormState = Omit<GeminiKeyConfig, 'headers' | 'models'> & {
+  alias?: string;
   headers: HeaderEntry[];
   modelEntries: ModelEntry[];
   excludedText: string;
 };
 
 export type ProviderFormState = Omit<ProviderKeyConfig, 'headers'> & {
+  alias?: string;
   headers: HeaderEntry[];
   modelEntries: ModelEntry[];
   excludedText: string;
 };
 
 export type VertexFormState = Omit<ProviderKeyConfig, 'headers'> & {
+  alias?: string;
   headers: HeaderEntry[];
   modelEntries: ModelEntry[];
   excludedText: string;

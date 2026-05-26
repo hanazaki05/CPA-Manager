@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authFilesApi } from '@/services/api/authFiles';
 import { apiClient } from '@/services/api/client';
-import type { ApiKeyAlias } from '@/services/api/usageService';
+import type { ApiKeyAlias, ProviderAlias } from '@/services/api/usageService';
 import type { AuthFileItem } from '@/types/authFile';
 import type { Config } from '@/types/config';
 import type { CredentialInfo } from '@/types/sourceInfo';
+import type { ApiKeyEntry, OpenAIProviderConfig, ProviderKeyConfig } from '@/types/provider';
 import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
 import { sha256Hex } from '@/utils/apiKeyHash';
 import { maskApiKey, maskSensitiveText } from '@/utils/format';
+import { buildProviderAliasKey, type AliasProviderType } from '@/utils/providerAliases';
 import { buildLegacyAuthIndexAliases } from '../legacyAuthIndexAliases';
 import {
   buildModelPriceIndex,
+  buildCandidateUsageSourceIds,
   calculateCost,
   collectUsageDetailsWithEndpoint,
   extractTotalTokens,
@@ -222,6 +225,10 @@ export type ApiKeyDisplayInfo = {
   masked: string;
 };
 
+type ProviderAliasDisplayInfo = {
+  alias: string;
+};
+
 export const buildApiKeyDisplayMap = (
   apiKeys: string[] = [],
   apiKeyAliases: ApiKeyAlias[] = []
@@ -244,6 +251,147 @@ export const buildApiKeyDisplayMap = (
     });
   });
   return map;
+};
+
+const normalizeProviderAliasItems = (providerAliases: ProviderAlias[] = []) => {
+  const map = new Map<string, string>();
+  providerAliases.forEach((entry) => {
+    const provider = readString(entry.provider).toLowerCase();
+    const providerKey = readString(entry.providerKey).toLowerCase();
+    const alias = sanitizeApiKeyDisplayText(readString(entry.alias));
+    if (!provider || !providerKey || !alias) return;
+    map.set(`${provider}:${providerKey}`, alias);
+  });
+  return map;
+};
+
+const providerAliasKeyCandidates = (
+  provider: AliasProviderType,
+  config: ProviderKeyConfig | OpenAIProviderConfig,
+  index: number,
+  authIndices: string[]
+) => {
+  const candidates = new Set<string>();
+  const addCandidate = (authIndex?: string) => {
+    candidates.add(
+      `${provider}:${buildProviderAliasKey(provider, { ...config, authIndex }, index)}`
+    );
+  };
+
+  addCandidate(readString(config.authIndex));
+  addCandidate('');
+  authIndices.forEach((authIndex) => addCandidate(authIndex));
+  return candidates;
+};
+
+const buildProviderAliasDisplayMap = (
+  config: Config | null | undefined,
+  providerAliases: ProviderAlias[] = []
+): Map<string, ProviderAliasDisplayInfo> => {
+  const storedAliases = normalizeProviderAliasItems(providerAliases);
+  const map = new Map<string, ProviderAliasDisplayInfo>();
+  if (!config || storedAliases.size === 0) return map;
+
+  const registerDisplay = (
+    provider: AliasProviderType,
+    configItem: ProviderKeyConfig | OpenAIProviderConfig,
+    index: number,
+    authIndices: string[],
+    sourceCandidates: string[]
+  ) => {
+    const alias = Array.from(providerAliasKeyCandidates(provider, configItem, index, authIndices))
+      .map((key) => storedAliases.get(key))
+      .find(Boolean);
+    if (!alias) return;
+
+    const info: ProviderAliasDisplayInfo = {
+      alias,
+    };
+
+    authIndices.forEach((authIndex) => {
+      const normalized = normalizeAuthIndex(authIndex);
+      if (normalized) map.set(`auth:${normalized}`, info);
+    });
+    sourceCandidates.forEach((source) => {
+      const normalized = readString(source);
+      if (normalized) map.set(`source:${normalized}`, info);
+    });
+    map.set(`provider:${provider}:${index}`, info);
+  };
+
+  const registerApiKeyProvider = (
+    provider: AliasProviderType,
+    configs: ProviderKeyConfig[] | undefined
+  ) => {
+    (configs || []).forEach((item, index) => {
+      const authIndex = normalizeAuthIndex(item.authIndex);
+      registerDisplay(
+        provider,
+        item,
+        index,
+        authIndex ? [authIndex] : [],
+        Array.from(buildCandidateUsageSourceIds({ apiKey: item.apiKey, prefix: item.prefix }))
+      );
+    });
+  };
+
+  registerApiKeyProvider('gemini', config.geminiApiKeys);
+  registerApiKeyProvider('claude', config.claudeApiKeys);
+  registerApiKeyProvider('codex', config.codexApiKeys);
+  registerApiKeyProvider('vertex', config.vertexApiKeys);
+
+  (config.openaiCompatibility || []).forEach((provider, index) => {
+    const authIndices = new Set<string>();
+    const sourceCandidates = new Set<string>();
+    const providerAuthIndex = normalizeAuthIndex(provider.authIndex);
+    if (providerAuthIndex) authIndices.add(providerAuthIndex);
+    buildCandidateUsageSourceIds({ prefix: provider.prefix }).forEach((source) =>
+      sourceCandidates.add(source)
+    );
+    (provider.apiKeyEntries || []).forEach((entry: ApiKeyEntry) => {
+      const authIndex = normalizeAuthIndex(entry.authIndex);
+      if (authIndex) authIndices.add(authIndex);
+      buildCandidateUsageSourceIds({ apiKey: entry.apiKey }).forEach((source) =>
+        sourceCandidates.add(source)
+      );
+    });
+    registerDisplay(
+      'openai',
+      provider,
+      index,
+      Array.from(authIndices),
+      Array.from(sourceCandidates)
+    );
+  });
+
+  return map;
+};
+
+export const buildProviderAliasDisplayMapForMonitoring = buildProviderAliasDisplayMap;
+
+const resolveProviderAliasDisplay = (
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>,
+  source: string,
+  authIndex: string,
+  sourceKey: string
+) => {
+  const normalizedAuthIndex = normalizeAuthIndex(authIndex);
+  if (normalizedAuthIndex) {
+    const byAuthIndex = providerAliasDisplayMap.get(`auth:${normalizedAuthIndex}`);
+    if (byAuthIndex) return byAuthIndex;
+  }
+
+  const normalizedSource = readString(source);
+  if (normalizedSource) {
+    const bySource = providerAliasDisplayMap.get(`source:${normalizedSource}`);
+    if (bySource) return bySource;
+  }
+
+  if (sourceKey.startsWith('provider:')) {
+    const bySourceKey = providerAliasDisplayMap.get(sourceKey);
+    if (bySourceKey) return bySourceKey;
+  }
+  return undefined;
 };
 
 const shouldIncludeInStats = (
@@ -602,6 +750,7 @@ export interface UseMonitoringDataParams {
   config: Config | null | undefined;
   modelPrices: Record<string, ModelPrice>;
   apiKeyAliases?: ApiKeyAlias[];
+  providerAliases?: ProviderAlias[];
   timeRange: MonitoringTimeRange;
   customTimeRange?: MonitoringCustomTimeRange | null;
   searchQuery: string;
@@ -643,6 +792,7 @@ const normalizeOpenAIChannel = (value: unknown, index: number): MonitoringChanne
   if (!isRecord(value)) return null;
 
   const name = readString(value.name || value.id) || `openai-${index + 1}`;
+  const alias = readString(value.alias ?? value.displayName ?? value['display-name']);
   const baseUrl = readString(value['base-url'] ?? value.baseUrl);
   if (!baseUrl) return null;
 
@@ -677,11 +827,44 @@ const normalizeOpenAIChannel = (value: unknown, index: number): MonitoringChanne
 
   return {
     key: `${name}:${index}`,
-    name,
+    name: alias || name,
     baseUrl,
     host: extractHost(baseUrl),
     disabled: parseBoolean(value.disabled),
     authIndices: Array.from(authIndices),
+    modelNames: Array.from(new Set(modelNames)),
+  };
+};
+
+const normalizeProviderChannel = (
+  value: unknown,
+  index: number,
+  provider: string,
+  fallbackLabel: string
+): MonitoringChannelMeta | null => {
+  if (!isRecord(value)) return null;
+
+  const baseName = readString(value.prefix) || `${fallbackLabel} #${index + 1}`;
+  const alias = readString(value.alias ?? value.displayName ?? value['display-name']);
+  const baseUrl = readString(value['base-url'] ?? value.baseUrl);
+  const authIndex = normalizeAuthIndex(value['auth-index'] ?? value.authIndex ?? value['auth_index']);
+  const modelNames = Array.isArray(value.models)
+    ? value.models
+        .map((item) => {
+          if (typeof item === 'string') return readString(item);
+          if (!isRecord(item)) return '';
+          return readString(item.name ?? item.alias ?? item.id ?? item.model);
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    key: `${provider}:${baseName}:${index}`,
+    name: alias || baseName,
+    baseUrl,
+    host: baseUrl ? extractHost(baseUrl) : '-',
+    disabled: parseBoolean(value.disabled),
+    authIndices: authIndex ? [authIndex] : [],
     modelNames: Array.from(new Set(modelNames)),
   };
 };
@@ -1759,7 +1942,8 @@ const buildEventRows = (
   sourceInfoMap: ReturnType<typeof buildSourceInfoMap>,
   channelByAuthIndex: Map<string, MonitoringChannelMeta>,
   modelPriceIndex: ModelPriceIndex,
-  apiKeyDisplayMap: Map<string, ApiKeyDisplayInfo>
+  apiKeyDisplayMap: Map<string, ApiKeyDisplayInfo>,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
 ) =>
   details
     .map((detail, index) => {
@@ -1793,14 +1977,24 @@ const buildEventRows = (
         detail.auth_project_id_snapshot ?? detail.authProjectIdSnapshot
       );
       const snapshotDisplay = snapshotAccount || snapshotLabel;
-      const sourceLabel = authMeta?.label || snapshotDisplay || sourceMeta.displayName || authIndex;
+      const baseSourceLabel = authMeta?.label || snapshotDisplay || sourceMeta.displayName || authIndex;
+      const baseAccount = authMeta?.account || snapshotAccount || baseSourceLabel;
+      const baseProvider = authMeta?.provider || snapshotProvider || sourceMeta.type || '-';
+      const sourceKey = sourceMeta.identityKey || `source:${baseSourceLabel}`;
+      const providerAliasDisplay = resolveProviderAliasDisplay(
+        providerAliasDisplayMap,
+        detail.source,
+        authIndex,
+        sourceKey
+      );
+      const sourceLabel = providerAliasDisplay?.alias || baseSourceLabel;
       const sourceMasked = maskEmailLike(sourceLabel);
-      const account = authMeta?.account || snapshotAccount || sourceLabel;
+      const account = providerAliasDisplay?.alias || baseAccount;
       const accountMasked = maskEmailLike(account);
       const apiKeyHash = readString(detail.api_key_hash ?? detail.apiKeyHash).toLowerCase();
       const apiKeyDisplay = apiKeyDisplayMap.get(apiKeyHash);
       const apiKeyLabel = sanitizeApiKeyDisplayText(
-        apiKeyDisplay?.label || formatApiKeyHashLabel(apiKeyHash),
+        providerAliasDisplay?.alias || apiKeyDisplay?.label || formatApiKeyHashLabel(apiKeyHash),
         formatApiKeyHashLabel(apiKeyHash)
       );
       const apiKeyMasked = sanitizeApiKeyDisplayText(
@@ -1811,7 +2005,12 @@ const buildEventRows = (
         channelByAuthIndex.get(authIndex) ||
         (authMeta?.authIndex ? channelByAuthIndex.get(authMeta.authIndex) : undefined);
       const channelLabel =
-        channelMeta?.name || authMeta?.provider || snapshotProvider || sourceMeta.type || '-';
+        providerAliasDisplay?.alias ||
+        channelMeta?.name ||
+        authMeta?.provider ||
+        snapshotProvider ||
+        sourceMeta.type ||
+        '-';
       const endpoint = readString(detail.__endpoint) || '-';
       const endpointMethod = readString(detail.__endpointMethod) || '-';
       const endpointPath = readString(detail.__endpointPath) || endpoint;
@@ -1867,7 +2066,6 @@ const buildEventRows = (
         : undefined;
       const dayKey = buildLocalDayKey(timestampMs);
       const hourLabel = buildHourLabel(timestampMs);
-      const sourceKey = sourceMeta.identityKey || `source:${sourceLabel}`;
       const taskKey = `${detail.timestamp}|${sourceKey}|${authIndex}`;
 
       return {
@@ -1888,11 +2086,11 @@ const buildEventRows = (
         accountMasked,
         authIndex,
         authIndexMasked: maskAuthIndex(authIndex),
-        authLabel: authMeta?.label || snapshotLabel || sourceMasked,
+        authLabel: providerAliasDisplay?.alias || authMeta?.label || snapshotLabel || sourceMasked,
         apiKeyHash,
         apiKeyLabel,
         apiKeyMasked,
-        provider: authMeta?.provider || snapshotProvider || sourceMeta.type || '-',
+        provider: baseProvider,
         projectId: snapshotProjectID,
         planType: authMeta?.planType || '-',
         channel: channelLabel,
@@ -2184,15 +2382,34 @@ const loadMonitoringMetaPayload = async (
       ? authResult.value.files
       : [];
 
-  let channels: MonitoringChannelMeta[] = [];
+  const fallbackChannels = [
+    ...(config?.geminiApiKeys || []).map((item, index) =>
+      normalizeProviderChannel(item, index, 'gemini', 'Gemini')
+    ),
+    ...(config?.claudeApiKeys || []).map((item, index) =>
+      normalizeProviderChannel(item, index, 'claude', 'Claude')
+    ),
+    ...(config?.codexApiKeys || []).map((item, index) =>
+      normalizeProviderChannel(item, index, 'codex', 'Codex')
+    ),
+    ...(config?.vertexApiKeys || []).map((item, index) =>
+      normalizeProviderChannel(item, index, 'vertex', 'Vertex')
+    ),
+  ].filter(Boolean) as MonitoringChannelMeta[];
+
+  let channels: MonitoringChannelMeta[] = fallbackChannels;
 
   if (channelResult.status === 'fulfilled') {
-    channels = extractArrayPayload(channelResult.value, 'openai-compatibility')
+    channels = [
+      ...fallbackChannels,
+      ...extractArrayPayload(channelResult.value, 'openai-compatibility')
       .map((item, index) => normalizeOpenAIChannel(item, index))
-      .filter(Boolean) as MonitoringChannelMeta[];
+        .filter(Boolean),
+    ] as MonitoringChannelMeta[];
   } else if (config?.openaiCompatibility?.length) {
-    channels = config.openaiCompatibility
-      .map((item, index) =>
+    channels = [
+      ...fallbackChannels,
+      ...config.openaiCompatibility.map((item, index) =>
         normalizeOpenAIChannel(
           {
             ...item,
@@ -2203,7 +2420,8 @@ const loadMonitoringMetaPayload = async (
           index
         )
       )
-      .filter(Boolean) as MonitoringChannelMeta[];
+        .filter(Boolean),
+    ] as MonitoringChannelMeta[];
   }
 
   const error = [authResult, channelResult]
@@ -2222,6 +2440,7 @@ export function useMonitoringData({
   config,
   modelPrices,
   apiKeyAliases,
+  providerAliases,
   timeRange,
   customTimeRange,
   searchQuery,

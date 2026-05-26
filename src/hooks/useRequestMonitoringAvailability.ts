@@ -5,7 +5,7 @@ import {
   usageServiceApi,
 } from '@/services/api/usageService';
 import { useAuthStore, useUsageServiceStore } from '@/stores';
-import { detectApiBaseFromLocation } from '@/utils/connection';
+import { buildUsageServiceBaseCandidates, detectApiBaseFromLocation } from '@/utils/connection';
 
 export type RequestMonitoringUnavailableReason =
   | 'checking'
@@ -34,17 +34,11 @@ export function useRequestMonitoringAvailability(): RequestMonitoringAvailabilit
   });
 
   const candidates = useMemo(() => {
-    return Array.from(
-      new Set(
-        [
-          usageServiceEnabled && usageServiceBase ? usageServiceBase : '',
-          apiBase,
-          detectApiBaseFromLocation(),
-        ]
-          .map((value) => normalizeUsageServiceBase(value || ''))
-          .filter(Boolean)
-      )
-    );
+    return buildUsageServiceBaseCandidates([
+      usageServiceEnabled && usageServiceBase ? usageServiceBase : '',
+      apiBase,
+      detectApiBaseFromLocation(),
+    ]).map(normalizeUsageServiceBase);
   }, [apiBase, usageServiceBase, usageServiceEnabled]);
 
   useEffect(() => {

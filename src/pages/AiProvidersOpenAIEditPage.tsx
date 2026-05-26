@@ -584,6 +584,14 @@ export function AiProvidersOpenAIEditPage() {
               disabled={saving || disableControls || isTestingKeys}
             />
             <Input
+              label={t('ai_providers.openai_alias_label')}
+              placeholder={t('ai_providers.openai_alias_placeholder')}
+              hint={t('ai_providers.openai_alias_hint')}
+              value={form.alias ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, alias: e.target.value }))}
+              disabled={saving || disableControls || isTestingKeys}
+            />
+            <Input
               label={t('ai_providers.priority_label')}
               hint={t('ai_providers.priority_hint')}
               type="number"
