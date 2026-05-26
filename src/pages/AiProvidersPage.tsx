@@ -18,6 +18,7 @@ import {
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { ampcodeApi, providersApi } from '@/services/api';
+import type { ProviderAlias } from '@/services/api/usageService';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import { loadProviderAliases, mergeProviderAliases } from '@/utils/providerAliases';
@@ -55,6 +56,7 @@ export function AiProvidersPage() {
   const [openaiProviders, setOpenaiProviders] = useState<OpenAIProviderConfig[]>(
     () => config?.openaiCompatibility || []
   );
+  const [providerAliases, setProviderAliasesState] = useState<ProviderAlias[]>([]);
 
   const [configSwitchingKey, setConfigSwitchingKey] = useState<string | null>(null);
 
@@ -105,6 +107,7 @@ export function AiProvidersPage() {
       const data = configResult.value;
       const providerAliases =
         providerAliasResult.status === 'fulfilled' ? providerAliasResult.value : [];
+      setProviderAliasesState(providerAliases);
       setGeminiKeys(mergeProviderAliases('gemini', data?.geminiApiKeys || [], providerAliases));
       setCodexConfigs(mergeProviderAliases('codex', data?.codexApiKeys || [], providerAliases));
       setClaudeConfigs(mergeProviderAliases('claude', data?.claudeApiKeys || [], providerAliases));
@@ -157,17 +160,25 @@ export function AiProvidersPage() {
   }, [isCurrentLayer, loadRecentRequests]);
 
   useEffect(() => {
-    if (config?.geminiApiKeys) setGeminiKeys(config.geminiApiKeys);
-    if (config?.codexApiKeys) setCodexConfigs(config.codexApiKeys);
-    if (config?.claudeApiKeys) setClaudeConfigs(config.claudeApiKeys);
-    if (config?.vertexApiKeys) setVertexConfigs(config.vertexApiKeys);
-    if (config?.openaiCompatibility) setOpenaiProviders(config.openaiCompatibility);
+    if (config?.geminiApiKeys)
+      setGeminiKeys(mergeProviderAliases('gemini', config.geminiApiKeys, providerAliases));
+    if (config?.codexApiKeys)
+      setCodexConfigs(mergeProviderAliases('codex', config.codexApiKeys, providerAliases));
+    if (config?.claudeApiKeys)
+      setClaudeConfigs(mergeProviderAliases('claude', config.claudeApiKeys, providerAliases));
+    if (config?.vertexApiKeys)
+      setVertexConfigs(mergeProviderAliases('vertex', config.vertexApiKeys, providerAliases));
+    if (config?.openaiCompatibility)
+      setOpenaiProviders(
+        mergeProviderAliases('openai', config.openaiCompatibility, providerAliases)
+      );
   }, [
     config?.geminiApiKeys,
     config?.codexApiKeys,
     config?.claudeApiKeys,
     config?.vertexApiKeys,
     config?.openaiCompatibility,
+    providerAliases,
   ]);
 
   const handleRecentRequestsRefresh = useCallback(async () => {
