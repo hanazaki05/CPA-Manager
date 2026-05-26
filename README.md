@@ -6,10 +6,6 @@
 
 A single-file Web UI for **CLI Proxy API (CPA)** plus an optional **Usage Service** for persistent usage analytics.
 
-**Main Project**: https://github.com/router-for-me/CLIProxyAPI  
-**Example URL**: https://remote.router-for.me/  
-**Minimum Required Version**: ≥ 7.1.0 (recommended latest)
-
 Since v6.10.0, CPA no longer includes built-in usage statistics. This project now supports usage analytics through a long-running Usage Service that consumes the CPA usage queue, persists request events to SQLite, and exposes panel-compatible usage APIs.
 
 - **CPA Main project**: https://github.com/router-for-me/CLIProxyAPI
