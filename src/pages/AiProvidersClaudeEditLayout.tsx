@@ -142,6 +142,7 @@ export function AiProvidersClaudeEditLayout() {
 
   const [configs, setConfigs] = useState<ProviderKeyConfig[]>(() => config?.claudeApiKeys ?? []);
   const [loading, setLoading] = useState(() => !isCacheValid('claude-api-key'));
+  const [aliasesLoaded, setAliasesLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const draftKey = useMemo(() => {
@@ -245,6 +246,7 @@ export function AiProvidersClaudeEditLayout() {
       .finally(() => {
         if (cancelled) return;
         setLoading(false);
+        setAliasesLoaded(true);
       });
 
     return () => {
@@ -254,6 +256,7 @@ export function AiProvidersClaudeEditLayout() {
 
   useEffect(() => {
     if (loading) return;
+    if (!aliasesLoaded) return;
     if (draft?.initialized) return;
 
     if (initialData) {
@@ -283,7 +286,7 @@ export function AiProvidersClaudeEditLayout() {
       testStatus: 'idle',
       testMessage: '',
     });
-  }, [draft?.initialized, draftKey, initDraft, initialData, loading]);
+  }, [aliasesLoaded, draft?.initialized, draftKey, initDraft, initialData, loading]);
 
   const resolvedLoading = !draft?.initialized;
   const baseline = draft?.baseline ?? null;
