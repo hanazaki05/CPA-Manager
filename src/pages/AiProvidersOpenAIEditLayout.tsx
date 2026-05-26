@@ -490,7 +490,6 @@ export function AiProvidersOpenAIEditLayout() {
           proxyUrl: entry.proxyUrl?.trim() || undefined,
           authIndex: normalizeAuthIndex(entry.authIndex) ?? undefined,
           headers: entry.headers,
-          authIndex: entry.authIndex,
         })),
       };
       if (form.priority !== undefined && Number.isFinite(form.priority)) {
