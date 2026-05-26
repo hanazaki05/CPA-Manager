@@ -23,6 +23,7 @@ export type ClaudeCloakBaseline = {
 export type ClaudeEditBaseline = {
   apiKey: string;
   authIndex: string;
+  alias: string;
   priority: number | null;
   prefix: string;
   baseUrl: string;
@@ -72,6 +73,7 @@ const resolveAction = <T,>(action: SetStateAction<T>, prev: T): T =>
 const buildEmptyForm = (): ProviderFormState => ({
   apiKey: '',
   authIndex: '',
+  alias: '',
   prefix: '',
   baseUrl: '',
   proxyUrl: '',

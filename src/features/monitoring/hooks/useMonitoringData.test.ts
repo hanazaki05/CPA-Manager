@@ -3,12 +3,14 @@ import {
   buildAccountRows,
   buildApiKeyRows,
   buildApiKeyDisplayMap,
+  buildProviderAliasDisplayMapForMonitoring,
   buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
   type MonitoringEventRow,
 } from './useMonitoringData';
 import { sha256Hex } from '@/utils/apiKeyHash';
 import type { AuthFileItem } from '@/types';
+import { buildProviderAliasKey } from '@/utils/providerAliases';
 
 const createMonitoringEventRow = (
   overrides: Partial<MonitoringEventRow> = {}
@@ -193,5 +195,43 @@ describe('buildApiKeyDisplayMap', () => {
 
     expect(map.get(apiKeyHash)?.label).toContain('*');
     expect(map.get(apiKeyHash)?.label).not.toContain('ghp_1234567890abcdef');
+  });
+});
+
+describe('buildProviderAliasDisplayMapForMonitoring', () => {
+  it('maps saved provider aliases by auth index and usage source candidates', () => {
+    const providerConfig = {
+      apiKey: 'sk-provider-alias-test-key',
+      prefix: 'team-codex',
+      baseUrl: 'https://example.test/v1',
+      authIndex: 'auth-provider-1',
+    };
+    const providerKey = buildProviderAliasKey('codex', providerConfig, 0);
+    const map = buildProviderAliasDisplayMapForMonitoring(
+      { codexApiKeys: [providerConfig] },
+      [{ provider: 'codex', providerKey, alias: 'Fast Pool', updatedAtMs: 1 }]
+    );
+
+    expect(map.get('auth:auth-provider-1')?.alias).toBe('Fast Pool');
+    expect(map.get('source:t:team-codex')?.alias).toBe('Fast Pool');
+    expect(map.get('source:m:sk******ey')?.alias).toBe('Fast Pool');
+    expect(map.get('source:k:686cd0dfeedcc90f')?.alias).toBe('Fast Pool');
+  });
+
+  it('uses OpenAI entry auth indices when the alias was saved against the provider config', () => {
+    const providerConfig = {
+      name: 'openai-router',
+      alias: 'OpenAI Router',
+      prefix: 'router',
+      baseUrl: 'https://openai-compatible.test/v1',
+      apiKeyEntries: [{ apiKey: 'sk-openai-entry-key', authIndex: 'auth-openai-entry' }],
+    };
+    const providerKey = buildProviderAliasKey('openai', providerConfig, 0);
+    const map = buildProviderAliasDisplayMapForMonitoring(
+      { openaiCompatibility: [providerConfig] },
+      [{ provider: 'openai', providerKey, alias: 'Router Alias', updatedAtMs: 1 }]
+    );
+
+    expect(map.get('auth:auth-openai-entry')?.alias).toBe('Router Alias');
   });
 });

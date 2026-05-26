@@ -22,6 +22,7 @@ import { entriesToModels, modelsToEntries } from '@/components/ui/modelInputList
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
 import type { ProviderFormState } from '@/components/providers';
 import type { ModelInfo } from '@/utils/models';
+import { loadProviderAliases, mergeProviderAliases, saveProviderAlias } from '@/utils/providerAliases';
 import layoutStyles from './AiProvidersEditLayout.module.scss';
 import styles from './AiProvidersPage.module.scss';
 
@@ -29,6 +30,7 @@ type LocationState = { fromAiProviders?: boolean } | null;
 
 const buildEmptyForm = (): ProviderFormState => ({
   apiKey: '',
+  alias: '',
   priority: undefined,
   prefix: '',
   baseUrl: '',
@@ -67,6 +69,7 @@ const normalizeModelEntries = (entries: Array<{ name: string; alias: string }>) 
 
 type CodexFormBaseline = {
   apiKey: string;
+  alias: string;
   priority: number | null;
   prefix: string;
   baseUrl: string;
@@ -79,6 +82,7 @@ type CodexFormBaseline = {
 
 const buildCodexBaseline = (form: ProviderFormState): CodexFormBaseline => ({
   apiKey: String(form.apiKey ?? '').trim(),
+  alias: String(form.alias ?? '').trim(),
   priority:
     form.priority !== undefined && Number.isFinite(form.priority) ? Math.trunc(form.priority) : null,
   prefix: String(form.prefix ?? '').trim(),
@@ -163,10 +167,16 @@ export function AiProvidersCodexEditPage() {
     setLoading(true);
     setError('');
 
-    fetchConfig('codex-api-key')
-      .then((value) => {
+    Promise.allSettled([fetchConfig('codex-api-key'), loadProviderAliases()])
+      .then(([configResult, aliasResult]) => {
         if (cancelled) return;
-        setConfigs(Array.isArray(value) ? (value as ProviderKeyConfig[]) : []);
+        if (configResult.status !== 'fulfilled') {
+          throw configResult.reason;
+        }
+        const value = configResult.value;
+        const providerAliases = aliasResult.status === 'fulfilled' ? aliasResult.value : [];
+        const list = Array.isArray(value) ? (value as ProviderKeyConfig[]) : [];
+        setConfigs(mergeProviderAliases('codex', list, providerAliases));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -231,6 +241,7 @@ export function AiProvidersCodexEditPage() {
   );
   const isDirty =
     baseline.apiKey !== form.apiKey.trim() ||
+    baseline.alias !== String(form.alias ?? '').trim() ||
     baseline.priority !== normalizedPriority ||
     baseline.prefix !== String(form.prefix ?? '').trim() ||
     baseline.baseUrl !== String(form.baseUrl ?? '').trim() ||
@@ -450,6 +461,7 @@ export function AiProvidersCodexEditPage() {
     try {
       const payload: ProviderKeyConfig = {
         apiKey: form.apiKey.trim(),
+        alias: form.alias?.trim() || undefined,
         priority: form.priority !== undefined ? Math.trunc(form.priority) : undefined,
         prefix: form.prefix?.trim() || undefined,
         baseUrl,
@@ -465,8 +477,11 @@ export function AiProvidersCodexEditPage() {
         editIndex !== null
           ? configs.map((item, idx) => (idx === editIndex ? payload : item))
           : [...configs, payload];
+      const aliasIndex = editIndex !== null ? editIndex : configs.length;
+      const aliasPayload = { ...payload, authIndex: form.authIndex };
 
       await providersApi.saveCodexConfigs(nextList);
+      await saveProviderAlias('codex', aliasPayload, form.alias ?? '', aliasIndex);
       updateConfigValue('codex-api-key', nextList);
       clearCache('codex-api-key');
       showNotification(
@@ -552,6 +567,14 @@ export function AiProvidersCodexEditPage() {
               label={t('ai_providers.codex_add_modal_key_label')}
               value={form.apiKey}
               onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+              disabled={disableControls || saving}
+            />
+            <Input
+              label={t('ai_providers.provider_alias_label')}
+              placeholder={t('ai_providers.provider_alias_placeholder')}
+              hint={t('ai_providers.provider_alias_hint')}
+              value={form.alias ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, alias: e.target.value }))}
               disabled={disableControls || saving}
             />
             <Input

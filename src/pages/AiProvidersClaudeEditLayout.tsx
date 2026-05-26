@@ -13,6 +13,7 @@ import { normalizeAuthIndex } from '@/utils/authIndex';
 import { areKeyValueEntriesEqual, areModelEntriesEqual, areStringArraysEqual } from '@/utils/compare';
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
 import { modelsToEntries } from '@/components/ui/modelInputListUtils';
+import { loadProviderAliases, mergeProviderAliases, saveProviderAlias } from '@/utils/providerAliases';
 import type { ClaudeEditBaseline } from '@/stores/useClaudeEditDraftStore';
 
 type LocationState = { fromAiProviders?: boolean } | null;
@@ -44,6 +45,7 @@ export type ClaudeEditOutletContext = {
 const buildEmptyForm = (): ProviderFormState => ({
   apiKey: '',
   authIndex: '',
+  alias: '',
   priority: undefined,
   prefix: '',
   baseUrl: '',
@@ -96,6 +98,7 @@ const normalizeCloakConfig = (cloak: ProviderFormState['cloak']) => {
 const buildClaudeBaseline = (form: ProviderFormState): ClaudeEditBaseline => ({
   apiKey: String(form.apiKey ?? '').trim(),
   authIndex: normalizeAuthIndex(form.authIndex) ?? '',
+  alias: String(form.alias ?? '').trim(),
   priority:
     form.priority !== undefined && Number.isFinite(form.priority) ? Math.trunc(form.priority) : null,
   prefix: String(form.prefix ?? '').trim(),
@@ -223,10 +226,16 @@ export function AiProvidersClaudeEditLayout() {
       setLoading(true);
     }
 
-    fetchConfig('claude-api-key')
-      .then((value) => {
+    Promise.allSettled([fetchConfig('claude-api-key'), loadProviderAliases()])
+      .then(([configResult, aliasResult]) => {
         if (cancelled) return;
-        setConfigs(Array.isArray(value) ? (value as ProviderKeyConfig[]) : []);
+        if (configResult.status !== 'fulfilled') {
+          throw configResult.reason;
+        }
+        const value = configResult.value;
+        const providerAliases = aliasResult.status === 'fulfilled' ? aliasResult.value : [];
+        const list = Array.isArray(value) ? (value as ProviderKeyConfig[]) : [];
+        setConfigs(mergeProviderAliases('claude', list, providerAliases));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -314,6 +323,7 @@ export function AiProvidersClaudeEditLayout() {
     baseline !== null &&
     (baseline.apiKey !== form.apiKey.trim() ||
       baseline.authIndex !== (normalizeAuthIndex(form.authIndex) ?? '') ||
+      baseline.alias !== String(form.alias ?? '').trim() ||
       baseline.priority !== normalizedPriority ||
       baseline.prefix !== String(form.prefix ?? '').trim() ||
       baseline.baseUrl !== String(form.baseUrl ?? '').trim() ||
@@ -409,6 +419,7 @@ export function AiProvidersClaudeEditLayout() {
     try {
       const payload: ProviderKeyConfig = {
         apiKey: form.apiKey.trim(),
+        alias: form.alias?.trim() || undefined,
         priority: form.priority !== undefined ? Math.trunc(form.priority) : undefined,
         prefix: form.prefix?.trim() || undefined,
         baseUrl: (form.baseUrl ?? '').trim() || undefined,
@@ -431,8 +442,11 @@ export function AiProvidersClaudeEditLayout() {
         editIndex !== null
           ? configs.map((item, idx) => (idx === editIndex ? payload : item))
           : [...configs, payload];
+      const aliasIndex = editIndex !== null ? editIndex : configs.length;
+      const aliasPayload = { ...payload, authIndex: form.authIndex };
 
       await providersApi.saveClaudeConfigs(nextList);
+      await saveProviderAlias('claude', aliasPayload, form.alias ?? '', aliasIndex);
       setConfigs(nextList);
       updateConfigValue('claude-api-key', nextList);
       clearCache('claude-api-key');

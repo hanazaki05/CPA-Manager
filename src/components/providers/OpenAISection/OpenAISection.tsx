@@ -539,7 +539,13 @@ export function OpenAISection({
         style={actionsDisabled ? { opacity: 0.6 } : undefined}
       >
         <div className={styles.openaiProviderMeta}>
-          <div className={styles.openaiProviderTitle}>{provider.name}</div>
+          <div className={styles.openaiProviderTitle}>{provider.alias || provider.name}</div>
+          {provider.alias && provider.alias !== provider.name && (
+            <div className={styles.fieldRow}>
+              <span className={styles.fieldLabel}>{t('ai_providers.openai_name_label')}:</span>
+              <span className={styles.fieldValue}>{provider.name}</span>
+            </div>
+          )}
           {provider.priority !== undefined && (
             <div className={styles.fieldRow}>
               <span className={styles.fieldLabel}>{t('common.priority')}:</span>

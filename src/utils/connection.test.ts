@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DOCKER_CPA_BASE_URL, resolveDefaultCPAConnectionBase } from './connection';
+import {
+  buildUsageServiceBaseCandidates,
+  DEFAULT_DOCKER_CPA_BASE_URL,
+  resolveDefaultCPAConnectionBase,
+} from './connection';
 
 describe('resolveDefaultCPAConnectionBase', () => {
   it('uses the explicit environment default first', () => {
@@ -30,5 +34,29 @@ describe('resolveDefaultCPAConnectionBase', () => {
         envDefault: '',
       })
     ).toBe('http://cpa.local:8317');
+  });
+});
+
+describe('buildUsageServiceBaseCandidates', () => {
+  it('adds the local standalone Usage Service port for localhost CPA panels', () => {
+    expect(buildUsageServiceBaseCandidates(['http://localhost:8317'])).toEqual([
+      'http://localhost:8317',
+      'http://localhost:18317',
+    ]);
+  });
+
+  it('keeps explicitly configured Usage Service candidates first and de-duplicates', () => {
+    expect(
+      buildUsageServiceBaseCandidates([
+        'http://127.0.0.1:18317/',
+        'http://127.0.0.1:8317',
+      ])
+    ).toEqual(['http://127.0.0.1:18317', 'http://127.0.0.1:8317']);
+  });
+
+  it('does not probe the Usage Service port for non-localhost panels', () => {
+    expect(buildUsageServiceBaseCandidates(['https://panel.example.com:8317'])).toEqual([
+      'https://panel.example.com:8317',
+    ]);
   });
 });

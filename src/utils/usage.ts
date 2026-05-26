@@ -183,8 +183,12 @@ export function buildCandidateUsageSourceIds(input: {
 
   const apiKey = input.apiKey?.trim();
   if (apiKey) {
+    const masked = maskApiKey(apiKey);
+    const legacyMasked = `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
     result.push(normalizeUsageSourceId(apiKey));
-    result.push(`${USAGE_SOURCE_PREFIX_TEXT}${maskApiKey(apiKey)}`);
+    result.push(`${USAGE_SOURCE_PREFIX_MASKED}${masked}`);
+    result.push(`${USAGE_SOURCE_PREFIX_TEXT}${masked}`);
+    result.push(normalizeUsageSourceId(`${USAGE_SOURCE_PREFIX_MASKED}${legacyMasked}`));
   }
 
   return Array.from(new Set(result.filter(Boolean)));

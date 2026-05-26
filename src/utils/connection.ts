@@ -1,6 +1,7 @@
 import { DEFAULT_API_PORT, MANAGEMENT_API_PREFIX } from './constants';
 
 export const DEFAULT_DOCKER_CPA_BASE_URL = 'http://host.docker.internal:8317';
+export const DEFAULT_USAGE_SERVICE_PORT = 18317;
 
 export const normalizeApiBase = (input: string): string => {
   let base = (input || '').trim();
@@ -58,4 +59,26 @@ export const detectApiBaseFromLocation = (): string => {
 export const isLocalhost = (hostname: string): boolean => {
   const value = (hostname || '').toLowerCase();
   return value === 'localhost' || value === '127.0.0.1' || value === '[::1]';
+};
+
+export const buildUsageServiceBaseCandidates = (values: string[]): string[] => {
+  const candidates: string[] = [];
+
+  values.forEach((value) => {
+    const normalized = normalizeApiBase(value || '');
+    if (!normalized) return;
+    candidates.push(normalized);
+
+    try {
+      const parsed = new URL(normalized);
+      if (isLocalhost(parsed.hostname) && parsed.port !== String(DEFAULT_USAGE_SERVICE_PORT)) {
+        parsed.port = String(DEFAULT_USAGE_SERVICE_PORT);
+        candidates.push(normalizeApiBase(parsed.toString()));
+      }
+    } catch {
+      // Ignore malformed candidates; normalizeApiBase handles the common host[:port] shapes.
+    }
+  });
+
+  return Array.from(new Set(candidates));
 };

@@ -1963,9 +1963,11 @@ export function MonitoringCenterPage() {
     lastRefreshedAt,
     modelPrices,
     apiKeyAliases,
+    providerAliases,
     usageServiceAvailable,
     setModelPrices,
     loadApiKeyAliases,
+    loadProviderAliases,
     syncModelPrices,
     exportUsage,
     importUsage,
@@ -1983,6 +1985,7 @@ export function MonitoringCenterPage() {
     config,
     modelPrices,
     apiKeyAliases,
+    providerAliases,
     timeRange,
     customTimeRange,
     searchQuery: deferredSearch,
@@ -1990,8 +1993,8 @@ export function MonitoringCenterPage() {
   });
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadUsage(), loadApiKeyAliases(), refreshMeta(false)]);
-  }, [loadApiKeyAliases, loadUsage, refreshMeta]);
+    await Promise.all([loadUsage(), loadApiKeyAliases(), loadProviderAliases(), refreshMeta(false)]);
+  }, [loadApiKeyAliases, loadProviderAliases, loadUsage, refreshMeta]);
 
   const setCurrentAccountPage = useCallback(
     (page: number) => {

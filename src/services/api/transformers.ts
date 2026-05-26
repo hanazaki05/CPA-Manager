@@ -153,6 +153,8 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
   if (!trimmed && !authIndex) return null;
 
   const config: ProviderKeyConfig = { apiKey: trimmed };
+  const alias = normalizeString(record?.alias ?? record?.displayName ?? record?.['display-name']);
+  if (alias) config.alias = alias;
   const priority = record?.priority ?? record?.['priority'];
   if (priority !== undefined && priority !== null && String(priority).trim() !== '') {
     const parsed = Number(priority);
@@ -222,6 +224,8 @@ const normalizeGeminiKeyConfig = (item: unknown): GeminiKeyConfig | null => {
   if (!trimmed && !authIndex) return null;
 
   const config: GeminiKeyConfig = { apiKey: trimmed };
+  const alias = normalizeString(record?.alias ?? record?.displayName ?? record?.['display-name']);
+  if (alias) config.alias = alias;
   const priority = record?.priority ?? record?.['priority'];
   if (priority !== undefined && priority !== null && String(priority).trim() !== '') {
     const parsed = Number(priority);
@@ -273,6 +277,8 @@ const normalizeOpenAIProvider = (provider: unknown): OpenAIProviderConfig | null
     apiKeyEntries
   };
 
+  const alias = normalizeString(provider.alias ?? provider.displayName ?? provider['display-name']);
+  if (alias) result.alias = alias;
   const disabled = normalizeBoolean(provider.disabled ?? provider['disabled']);
   if (disabled !== undefined) result.disabled = disabled;
   const prefix = normalizePrefix(provider.prefix ?? provider['prefix']);

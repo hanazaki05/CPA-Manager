@@ -20,6 +20,7 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { ampcodeApi, providersApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
+import { loadProviderAliases, mergeProviderAliases } from '@/utils/providerAliases';
 import styles from './AiProvidersPage.module.scss';
 
 export function AiProvidersPage() {
@@ -80,11 +81,21 @@ export function AiProvidersPage() {
     }
     setError('');
     try {
-      const [configResult, vertexResult, ampcodeResult, openaiResult] = await Promise.allSettled([
+      const [
+        configResult,
+        vertexResult,
+        ampcodeResult,
+        openaiResult,
+        providerAliasResult,
+        codexResult,
+      ] =
+        await Promise.allSettled([
         fetchConfig(),
         providersApi.getVertexConfigs(),
         ampcodeApi.getAmpcode(),
         providersApi.getOpenAIProviders(),
+        loadProviderAliases(),
+        providersApi.getCodexConfigs(),
       ]);
 
       if (configResult.status !== 'fulfilled') {
@@ -92,14 +103,24 @@ export function AiProvidersPage() {
       }
 
       const data = configResult.value;
-      setGeminiKeys(data?.geminiApiKeys || []);
-      setCodexConfigs(data?.codexApiKeys || []);
-      setClaudeConfigs(data?.claudeApiKeys || []);
-      setVertexConfigs(data?.vertexApiKeys || []);
-      setOpenaiProviders(data?.openaiCompatibility || []);
+      const providerAliases =
+        providerAliasResult.status === 'fulfilled' ? providerAliasResult.value : [];
+      setGeminiKeys(mergeProviderAliases('gemini', data?.geminiApiKeys || [], providerAliases));
+      setCodexConfigs(mergeProviderAliases('codex', data?.codexApiKeys || [], providerAliases));
+      setClaudeConfigs(mergeProviderAliases('claude', data?.claudeApiKeys || [], providerAliases));
+      setVertexConfigs(mergeProviderAliases('vertex', data?.vertexApiKeys || [], providerAliases));
+      setOpenaiProviders(
+        mergeProviderAliases('openai', data?.openaiCompatibility || [], providerAliases)
+      );
+
+      if (codexResult.status === 'fulfilled') {
+        setCodexConfigs(mergeProviderAliases('codex', codexResult.value || [], providerAliases));
+        updateConfigValue('codex-api-key', codexResult.value || []);
+        clearCache('codex-api-key');
+      }
 
       if (vertexResult.status === 'fulfilled') {
-        setVertexConfigs(vertexResult.value || []);
+        setVertexConfigs(mergeProviderAliases('vertex', vertexResult.value || [], providerAliases));
         updateConfigValue('vertex-api-key', vertexResult.value || []);
         clearCache('vertex-api-key');
       }
@@ -110,7 +131,9 @@ export function AiProvidersPage() {
       }
 
       if (openaiResult.status === 'fulfilled') {
-        setOpenaiProviders(openaiResult.value || []);
+        setOpenaiProviders(
+          mergeProviderAliases('openai', openaiResult.value || [], providerAliases)
+        );
         updateConfigValue('openai-compatibility', openaiResult.value || []);
         clearCache('openai-compatibility');
       }

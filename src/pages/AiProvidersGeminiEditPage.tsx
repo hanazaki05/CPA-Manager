@@ -21,6 +21,7 @@ import type { ModelInfo } from '@/utils/models';
 import { entriesToModels, modelsToEntries } from '@/components/ui/modelInputListUtils';
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
 import type { GeminiFormState } from '@/components/providers';
+import { loadProviderAliases, mergeProviderAliases, saveProviderAlias } from '@/utils/providerAliases';
 import layoutStyles from './AiProvidersEditLayout.module.scss';
 import styles from './AiProvidersPage.module.scss';
 
@@ -28,6 +29,7 @@ type LocationState = { fromAiProviders?: boolean } | null;
 
 const buildEmptyForm = (): GeminiFormState => ({
   apiKey: '',
+  alias: '',
   priority: undefined,
   prefix: '',
   baseUrl: '',
@@ -64,6 +66,7 @@ const normalizeModelEntries = (entries: Array<{ name: string; alias: string }>) 
 
 type GeminiFormBaseline = {
   apiKey: string;
+  alias: string;
   priority: number | null;
   prefix: string;
   baseUrl: string;
@@ -75,6 +78,7 @@ type GeminiFormBaseline = {
 
 const buildGeminiBaseline = (form: GeminiFormState): GeminiFormBaseline => ({
   apiKey: String(form.apiKey ?? '').trim(),
+  alias: String(form.alias ?? '').trim(),
   priority:
     form.priority !== undefined && Number.isFinite(form.priority) ? Math.trunc(form.priority) : null,
   prefix: String(form.prefix ?? '').trim(),
@@ -158,10 +162,16 @@ export function AiProvidersGeminiEditPage() {
     setLoading(true);
     setError('');
 
-    fetchConfig('gemini-api-key')
-      .then((value) => {
+    Promise.allSettled([fetchConfig('gemini-api-key'), loadProviderAliases()])
+      .then(([configResult, aliasResult]) => {
         if (cancelled) return;
-        setConfigs(Array.isArray(value) ? (value as GeminiKeyConfig[]) : []);
+        if (configResult.status !== 'fulfilled') {
+          throw configResult.reason;
+        }
+        const value = configResult.value;
+        const providerAliases = aliasResult.status === 'fulfilled' ? aliasResult.value : [];
+        const list = Array.isArray(value) ? (value as GeminiKeyConfig[]) : [];
+        setConfigs(mergeProviderAliases('gemini', list, providerAliases));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -416,6 +426,7 @@ export function AiProvidersGeminiEditPage() {
   );
   const isDirty =
     baseline.apiKey !== form.apiKey.trim() ||
+    baseline.alias !== String(form.alias ?? '').trim() ||
     baseline.priority !== normalizedPriority ||
     baseline.prefix !== String(form.prefix ?? '').trim() ||
     baseline.baseUrl !== String(form.baseUrl ?? '').trim() ||
@@ -451,6 +462,7 @@ export function AiProvidersGeminiEditPage() {
 
       const payload: GeminiKeyConfig = {
         apiKey: form.apiKey.trim(),
+        alias: form.alias?.trim() || undefined,
         priority: form.priority !== undefined ? Math.trunc(form.priority) : undefined,
         prefix: form.prefix?.trim() || undefined,
         baseUrl: form.baseUrl?.trim() || undefined,
@@ -465,8 +477,11 @@ export function AiProvidersGeminiEditPage() {
         editIndex !== null
           ? configs.map((item, idx) => (idx === editIndex ? payload : item))
           : [...configs, payload];
+      const aliasIndex = editIndex !== null ? editIndex : configs.length;
+      const aliasPayload = { ...payload, authIndex: form.authIndex };
 
       await providersApi.saveGeminiKeys(nextList);
+      await saveProviderAlias('gemini', aliasPayload, form.alias ?? '', aliasIndex);
       updateConfigValue('gemini-api-key', nextList);
       clearCache('gemini-api-key');
       showNotification(
@@ -548,6 +563,14 @@ export function AiProvidersGeminiEditPage() {
               placeholder={t('ai_providers.gemini_add_modal_key_placeholder')}
               value={form.apiKey}
               onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+              disabled={disableControls || saving}
+            />
+            <Input
+              label={t('ai_providers.provider_alias_label')}
+              placeholder={t('ai_providers.provider_alias_placeholder')}
+              hint={t('ai_providers.provider_alias_hint')}
+              value={form.alias ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, alias: e.target.value }))}
               disabled={disableControls || saving}
             />
             <Input
