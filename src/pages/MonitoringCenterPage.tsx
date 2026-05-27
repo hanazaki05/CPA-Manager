@@ -66,6 +66,7 @@ import {
   resolveMonitoringStatusRangeBounds,
   shouldClampAccountOverviewPage,
   shouldResetAccountOverviewPage,
+  sortApiKeyRows,
   sortAccountRows,
   readAccountOverviewUiState,
   writeAccountOverviewUiState,
@@ -73,6 +74,8 @@ import {
   writeMonitoringTransientUiState,
   normalizeMonitoringAutoRefreshMs,
   type AccountOverviewPageResetState,
+  type ApiKeySortKey,
+  type ApiKeySortState,
   type AccountSortKey,
   type MonitoringAccountAuthState,
   type AccountSortState,
@@ -202,11 +205,15 @@ type AccountQuotaState = {
   lastRefreshedAt?: number;
 };
 
-type AccountOverviewColumn = {
+type SortableOverviewColumn<TSortKey extends string> = {
   key: string;
   label: string;
-  sortKey?: AccountSortKey;
+  sortKey?: TSortKey;
 };
+
+type AccountOverviewColumn = SortableOverviewColumn<AccountSortKey>;
+
+type ApiKeyOverviewColumn = SortableOverviewColumn<ApiKeySortKey>;
 
 type AccountSummaryMetric = {
   key: string;
@@ -493,8 +500,7 @@ export const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow
     const serverRequestCount = row.serverStreamRequestCount;
     const serverSuccessToEvent = row.serverStreamSuccessCallsToEvent;
     const serverPatternToEvent = row.serverStreamRecentPatternToEvent;
-    const hasServerEventMetrics =
-      typeof serverRequestCount === 'number' && serverRequestCount > 0;
+    const hasServerEventMetrics = typeof serverRequestCount === 'number' && serverRequestCount > 0;
 
     return {
       ...row,
@@ -1913,6 +1919,9 @@ export function MonitoringCenterPage() {
   const [accountSort, setAccountSort] = useState<AccountSortState>(
     initialAccountOverviewUiState.current.sort
   );
+  const [apiKeySort, setApiKeySort] = useState<ApiKeySortState>(
+    initialAccountOverviewUiState.current.apiKeySort
+  );
   const [accountPageByMode, setAccountPageByMode] = useState(() => ({
     table: 1,
     card: initialAccountOverviewUiState.current.cardPagination.page,
@@ -2031,6 +2040,8 @@ export function MonitoringCenterPage() {
       apiKeys: {
         page: apiKeyPage,
         pageSize: apiKeyPageSize,
+        sortKey: apiKeySort.key,
+        sortDirection: apiKeySort.direction,
       },
       realtime: {
         page: realtimePage,
@@ -2048,6 +2059,8 @@ export function MonitoringCenterPage() {
       accountSort.key,
       apiKeyPage,
       apiKeyPageSize,
+      apiKeySort.direction,
+      apiKeySort.key,
       realtimePage,
       realtimePageSize,
     ]
@@ -2152,6 +2165,7 @@ export function MonitoringCenterPage() {
     writeAccountOverviewUiState({
       mode: accountOverviewMode,
       sort: accountSort,
+      apiKeySort,
       cardPagination: {
         page: accountPageByMode.card,
         pageSize: accountPageSizeByMode.card,
@@ -2178,6 +2192,7 @@ export function MonitoringCenterPage() {
     accountPageSizeByMode.card,
     accountPageSizeByMode.table,
     accountSort,
+    apiKeySort,
     apiKeyPageSize,
     autoRefreshMs,
     realtimePageSize,
@@ -2386,15 +2401,22 @@ export function MonitoringCenterPage() {
     accountPageRows && usagePages?.accounts
       ? Math.max(0, usagePages.accounts.total_items)
       : sortedAccountRows.length;
+  const sortedApiKeyRows = useMemo(
+    () => sortApiKeyRows(apiKeyRows, apiKeySort),
+    [apiKeyRows, apiKeySort]
+  );
+  const displayedApiKeyRows = useMemo(
+    () => (apiKeyPageRows ? sortApiKeyRows(apiKeyPageRows, apiKeySort) : sortedApiKeyRows),
+    [apiKeyPageRows, apiKeySort, sortedApiKeyRows]
+  );
   const groupedRealtimeRows = useMemo(
     () => buildRealtimeMonitorRows(scopedStatsRows),
     [scopedStatsRows]
   );
-  const displayedApiKeyRows = apiKeyPageRows ?? apiKeyRows;
   const apiKeyTotalCount =
     apiKeyPageRows && usagePages?.apiKeys
       ? Math.max(0, usagePages.apiKeys.total_items)
-      : apiKeyRows.length;
+      : sortedApiKeyRows.length;
   const realtimeLogRows = useMemo(
     () => buildRealtimeLogRows(realtimePageRows ?? scopedRows),
     [realtimePageRows, scopedRows]
@@ -2431,13 +2453,13 @@ export function MonitoringCenterPage() {
             usagePages.apiKeys.page_size,
             usagePages.apiKeys.total_items
           )
-        : buildPaginationState(apiKeyRows, apiKeyPage, apiKeyPageSize),
+        : buildPaginationState(sortedApiKeyRows, apiKeyPage, apiKeyPageSize),
     [
       apiKeyPage,
       apiKeyPageRows,
       apiKeyPageSize,
-      apiKeyRows,
       displayedApiKeyRows,
+      sortedApiKeyRows,
       usagePages?.apiKeys,
     ]
   );
@@ -2594,15 +2616,31 @@ export function MonitoringCenterPage() {
     [t]
   );
 
-  const apiKeyOverviewColumns = useMemo<AccountOverviewColumn[]>(
+  const apiKeyOverviewColumns = useMemo<ApiKeyOverviewColumn[]>(
     () => [
       { key: 'api-key', label: t('monitoring.api_key_summary_col_key') },
-      { key: 'total-calls', label: t('monitoring.total_calls') },
-      { key: 'success-calls', label: t('monitoring.account_overview_col_success') },
-      { key: 'failure-calls', label: t('monitoring.account_overview_col_failure') },
-      { key: 'total-tokens', label: t('monitoring.total_tokens') },
-      { key: 'estimated-cost', label: t('monitoring.account_overview_col_cost') },
-      { key: 'latest-request-time', label: t('monitoring.latest_request_time') },
+      { key: 'total-calls', label: t('monitoring.total_calls'), sortKey: 'totalCalls' },
+      {
+        key: 'success-calls',
+        label: t('monitoring.account_overview_col_success'),
+        sortKey: 'successCalls',
+      },
+      {
+        key: 'failure-calls',
+        label: t('monitoring.account_overview_col_failure'),
+        sortKey: 'failureCalls',
+      },
+      { key: 'total-tokens', label: t('monitoring.total_tokens'), sortKey: 'totalTokens' },
+      {
+        key: 'estimated-cost',
+        label: t('monitoring.account_overview_col_cost'),
+        sortKey: 'totalCost',
+      },
+      {
+        key: 'latest-request-time',
+        label: t('monitoring.latest_request_time'),
+        sortKey: 'lastSeenAt',
+      },
     ],
     [t]
   );
@@ -2618,6 +2656,27 @@ export function MonitoringCenterPage() {
         label: `${prefix}${column.label}`,
       }));
   }, [accountOverviewColumns, t]);
+
+  const apiKeySortOptions = useMemo(() => {
+    const prefix = t('monitoring.account_overview_sort_prefix');
+    const options: Array<{ value: ApiKeySortKey; label: string }> = [
+      { value: 'totalCalls', label: t('monitoring.total_calls') },
+      { value: 'successCalls', label: t('monitoring.success_calls') },
+      { value: 'failureCalls', label: t('monitoring.failure_calls') },
+      { value: 'successRate', label: t('monitoring.success_rate') },
+      { value: 'totalTokens', label: t('monitoring.total_tokens') },
+      { value: 'inputTokens', label: t('monitoring.input_tokens') },
+      { value: 'outputTokens', label: t('monitoring.output_tokens') },
+      { value: 'cachedTokens', label: t('monitoring.cached_tokens') },
+      { value: 'totalCost', label: t('monitoring.account_overview_col_cost') },
+      { value: 'lastSeenAt', label: t('monitoring.latest_request_time') },
+    ];
+
+    return options.map((option) => ({
+      value: option.value,
+      label: `${prefix}${option.label}`,
+    }));
+  }, [t]);
 
   const accountPageSizeOptions =
     accountOverviewMode === 'card'
@@ -2991,6 +3050,33 @@ export function MonitoringCenterPage() {
     },
     [resetCurrentAccountPage]
   );
+
+  const handleApiKeySortKeyChange = useCallback((key: ApiKeySortKey) => {
+    setApiKeyPage(1);
+    setApiKeySort((previous) =>
+      previous.key === key
+        ? previous
+        : {
+            key,
+            direction: 'desc',
+          }
+    );
+  }, []);
+
+  const handleApiKeySort = useCallback((key: ApiKeySortKey) => {
+    setApiKeyPage(1);
+    setApiKeySort((previous) =>
+      previous.key === key
+        ? {
+            key,
+            direction: previous.direction === 'desc' ? 'asc' : 'desc',
+          }
+        : {
+            key,
+            direction: 'desc',
+          }
+    );
+  }, []);
 
   const handleAccountPageChange = useCallback(
     (page: number) => {
@@ -3773,8 +3859,25 @@ export function MonitoringCenterPage() {
         subtitle={t('monitoring.api_key_summary_desc')}
         className={styles.apiKeyPanel}
         extra={
-          <div className={styles.inlineMetrics}>
-            <span>{t('monitoring.api_key_summary_keys_count', { count: apiKeyTotalCount })}</span>
+          <div className={styles.accountOverviewHeaderActions}>
+            <div className={styles.accountOverviewToolbarRow}>
+              <div className={styles.inlineMetrics}>
+                <span>
+                  {t('monitoring.api_key_summary_keys_count', { count: apiKeyTotalCount })}
+                </span>
+              </div>
+              <div className={styles.accountOverviewSortBar}>
+                <Select
+                  className={styles.accountOverviewSortSelect}
+                  triggerClassName={styles.accountOverviewSortSelectTrigger}
+                  value={apiKeySort.key}
+                  options={apiKeySortOptions}
+                  onChange={(value) => handleApiKeySortKeyChange(value as ApiKeySortKey)}
+                  ariaLabel={t('monitoring.account_overview_sort_label')}
+                  fullWidth={false}
+                />
+              </div>
+            </div>
           </div>
         }
       >
@@ -3787,9 +3890,49 @@ export function MonitoringCenterPage() {
             </colgroup>
             <thead>
               <tr>
-                {apiKeyOverviewColumns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
+                {apiKeyOverviewColumns.map((column) => {
+                  const sortKey = column.sortKey;
+
+                  if (!sortKey) {
+                    return <th key={column.key}>{column.label}</th>;
+                  }
+
+                  const isActive = apiKeySort.key === sortKey;
+                  const SortIcon = isActive
+                    ? apiKeySort.direction === 'desc'
+                      ? IconChevronDown
+                      : IconChevronUp
+                    : null;
+
+                  return (
+                    <th
+                      key={column.key}
+                      aria-sort={
+                        isActive
+                          ? apiKeySort.direction === 'desc'
+                            ? 'descending'
+                            : 'ascending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className={[
+                          styles.sortableHeaderButton,
+                          isActive ? styles.sortableHeaderButtonActive : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        onClick={() => handleApiKeySort(sortKey)}
+                      >
+                        <span>{column.label}</span>
+                        <span className={styles.sortIndicator} aria-hidden="true">
+                          {SortIcon ? <SortIcon size={14} /> : null}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>

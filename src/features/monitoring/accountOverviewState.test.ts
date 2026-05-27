@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { MonitoringAccountRow, MonitoringEventRow } from './hooks/useMonitoringData';
+import type {
+  MonitoringAccountRow,
+  MonitoringApiKeyRow,
+  MonitoringEventRow,
+} from './hooks/useMonitoringData';
 import {
   ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS,
   ACCOUNT_OVERVIEW_CARD_METRIC_KEYS,
+  DEFAULT_API_KEY_SORT,
   DEFAULT_ACCOUNT_SORT,
   buildEmptyMonitoringStatusData,
   buildMonitoringAccountAuthState,
@@ -13,7 +18,9 @@ import {
   normalizeAccountOverviewPageSize,
   normalizeAccountOverviewMode,
   normalizeAccountOverviewUiState,
+  normalizeApiKeySortState,
   normalizeAccountSortState,
+  sortApiKeyRows,
   sortAccountRows,
 } from './accountOverviewState';
 import type { AuthFileItem } from '@/types';
@@ -38,6 +45,29 @@ const createAccountRow = (overrides: Partial<MonitoringAccountRow> = {}): Monito
   averageLatencyMs: overrides.averageLatencyMs ?? null,
   lastSeenAt: overrides.lastSeenAt ?? 0,
   recentPattern: overrides.recentPattern ?? [],
+  models: overrides.models ?? [],
+});
+
+const createApiKeyRow = (overrides: Partial<MonitoringApiKeyRow> = {}): MonitoringApiKeyRow => ({
+  id: overrides.id ?? 'api-key',
+  apiKeyHash: overrides.apiKeyHash ?? 'api-key-hash',
+  apiKeyLabel: overrides.apiKeyLabel ?? 'ak-1',
+  apiKeyMasked: overrides.apiKeyMasked ?? 'ak**********-1',
+  isUnknown: overrides.isUnknown ?? false,
+  authLabels: overrides.authLabels ?? [],
+  sourceLabels: overrides.sourceLabels ?? [],
+  channels: overrides.channels ?? [],
+  totalCalls: overrides.totalCalls ?? 0,
+  successCalls: overrides.successCalls ?? 0,
+  failureCalls: overrides.failureCalls ?? 0,
+  successRate: overrides.successRate ?? 1,
+  inputTokens: overrides.inputTokens ?? 0,
+  outputTokens: overrides.outputTokens ?? 0,
+  cachedTokens: overrides.cachedTokens ?? 0,
+  totalTokens: overrides.totalTokens ?? 0,
+  totalCost: overrides.totalCost ?? 0,
+  averageLatencyMs: overrides.averageLatencyMs ?? null,
+  lastSeenAt: overrides.lastSeenAt ?? 0,
   models: overrides.models ?? [],
 });
 
@@ -74,7 +104,7 @@ const createEventRow = (overrides: Partial<MonitoringEventRow> = {}): Monitoring
   failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 120,
-  latencySumMs: overrides.latencySumMs ?? (overrides.latencyMs ?? 120),
+  latencySumMs: overrides.latencySumMs ?? overrides.latencyMs ?? 120,
   latencyCount: overrides.latencyCount ?? 1,
   inputTokens: overrides.inputTokens ?? 10,
   outputTokens: overrides.outputTokens ?? 5,
@@ -98,11 +128,13 @@ describe('accountOverviewState', () => {
       normalizeAccountOverviewUiState({
         mode: 'card',
         sort: { key: 'totalCost', direction: 'asc' },
+        apiKeySort: { key: 'totalTokens', direction: 'asc' },
         cardPagination: { page: 3, pageSize: 18 },
       })
     ).toEqual({
       mode: 'card',
       sort: { key: 'totalCost', direction: 'asc' },
+      apiKeySort: { key: 'totalTokens', direction: 'asc' },
       cardPagination: { page: 3, pageSize: 18 },
       timeRange: 'today',
       filters: {
@@ -125,11 +157,13 @@ describe('accountOverviewState', () => {
       normalizeAccountOverviewUiState({
         mode: 'grid',
         sort: { key: 'bad' },
+        apiKeySort: { key: 'bad' },
         cardPagination: { page: 0, pageSize: 11 },
       })
     ).toEqual({
       mode: 'table',
       sort: DEFAULT_ACCOUNT_SORT,
+      apiKeySort: DEFAULT_API_KEY_SORT,
       cardPagination: { page: 1, pageSize: 12 },
       timeRange: 'today',
       filters: {
@@ -152,6 +186,11 @@ describe('accountOverviewState', () => {
   it('keeps the existing default account sort contract', () => {
     expect(DEFAULT_ACCOUNT_SORT).toEqual({ key: 'lastSeenAt', direction: 'desc' });
     expect(normalizeAccountSortState(undefined)).toEqual(DEFAULT_ACCOUNT_SORT);
+  });
+
+  it('defaults api key summary sort to total calls descending', () => {
+    expect(DEFAULT_API_KEY_SORT).toEqual({ key: 'totalCalls', direction: 'desc' });
+    expect(normalizeApiKeySortState(undefined)).toEqual(DEFAULT_API_KEY_SORT);
   });
 
   it('sorts rows by the shared account sort state', () => {
@@ -191,6 +230,39 @@ describe('accountOverviewState', () => {
         { key: 'successRate', direction: 'desc' }
       ).map((row) => row.id)
     ).toEqual(['strong', 'weak']);
+  });
+
+  it('sorts api key rows by the shared api key sort state', () => {
+    const recentKey = createApiKeyRow({
+      id: 'recent',
+      apiKeyLabel: 'recent',
+      totalCalls: 4,
+      totalTokens: 100,
+      totalCost: 2,
+      lastSeenAt: 50,
+    });
+    const busyKey = createApiKeyRow({
+      id: 'busy',
+      apiKeyLabel: 'busy',
+      totalCalls: 25,
+      totalTokens: 80,
+      totalCost: 1,
+      lastSeenAt: 10,
+    });
+
+    expect(sortApiKeyRows([recentKey, busyKey]).map((row) => row.id)).toEqual(['busy', 'recent']);
+
+    expect(
+      sortApiKeyRows([recentKey, busyKey], { key: 'lastSeenAt', direction: 'desc' }).map(
+        (row) => row.id
+      )
+    ).toEqual(['recent', 'busy']);
+
+    expect(
+      sortApiKeyRows([recentKey, busyKey], { key: 'totalTokens', direction: 'asc' }).map(
+        (row) => row.id
+      )
+    ).toEqual(['busy', 'recent']);
   });
 
   it('exposes the requested metric keys for card mode', () => {
