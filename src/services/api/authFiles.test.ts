@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mocks } = vi.hoisted(() => ({
   mocks: {
     postForm: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
 vi.mock('./client', () => ({
   apiClient: {
     postForm: mocks.postForm,
+    delete: mocks.delete,
   },
 }));
 
@@ -16,6 +18,7 @@ import { authFilesApi } from './authFiles';
 
 beforeEach(() => {
   mocks.postForm.mockReset();
+  mocks.delete.mockReset();
 });
 
 describe('authFilesApi save auth file upload contracts', () => {
@@ -152,5 +155,25 @@ describe('authFilesApi save auth file upload contracts', () => {
         access_token: 'token',
       })
     ).rejects.toThrow('Upload failed');
+  });
+});
+
+describe('authFilesApi delete auth file contracts', () => {
+  it('deleteFiles sends repeated name query params for batch delete', async () => {
+    mocks.delete.mockResolvedValue({
+      status: 'ok',
+      deleted: 2,
+      files: ['alpha.json', 'beta.json'],
+      failed: [],
+    });
+
+    await expect(authFilesApi.deleteFiles(['alpha.json', 'beta.json'])).resolves.toEqual({
+      status: 'ok',
+      deleted: 2,
+      files: ['alpha.json', 'beta.json'],
+      failed: [],
+    });
+
+    expect(mocks.delete).toHaveBeenCalledWith('/auth-files?name=alpha.json&name=beta.json');
   });
 });

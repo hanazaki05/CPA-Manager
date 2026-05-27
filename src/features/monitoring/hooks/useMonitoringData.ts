@@ -20,6 +20,7 @@ import {
   normalizeAuthIndex,
   type ModelPrice,
   type ModelPriceIndex,
+  type UsageOutcome,
   type UsageDetailWithEndpoint,
 } from '@/utils/usage';
 
@@ -395,8 +396,8 @@ const resolveProviderAliasDisplay = (
 };
 
 const shouldIncludeInStats = (
-  row: Pick<MonitoringEventRow, 'failed' | 'inputTokens' | 'outputTokens'>
-) => row.failed || row.inputTokens > 0 || row.outputTokens > 0;
+  row: Pick<MonitoringEventRow, 'failed' | 'outcome' | 'inputTokens' | 'outputTokens'>
+) => row.outcome !== 'canceled' && (row.failed || row.inputTokens > 0 || row.outputTokens > 0);
 
 const isEffectiveLabel = (value: string) => {
   const trimmed = value.trim();
@@ -1026,9 +1027,10 @@ const buildRecentPattern = (rows: MonitoringEventRow[], limit = 10) =>
   rows
     .slice()
     .sort((left, right) => right.timestampMs - left.timestampMs)
+    .filter((row) => row.outcome !== 'canceled')
     .slice(0, limit)
     .reverse()
-    .map((row) => !row.failed);
+    .map((row) => row.outcome === 'success');
 
 export const buildMonitoringSummary = (rows: MonitoringEventRow[]): MonitoringSummary => {
   const totalCalls = rows.reduce((sum, row) => sum + row.requestCount, 0);
@@ -1252,6 +1254,7 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
   return Array.from(grouped.values())
     .map((item) => {
       const channels = Array.from(item.channels).sort();
+      const completedCalls = item.successCalls + item.failureCalls;
       return {
         id: item.id,
         account: item.account,
@@ -1263,7 +1266,7 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
         totalCalls: item.totalCalls,
         successCalls: item.successCalls,
         failureCalls: item.failureCalls,
-        successRate: item.totalCalls > 0 ? item.successCalls / item.totalCalls : 1,
+        successRate: completedCalls > 0 ? item.successCalls / completedCalls : 1,
         inputTokens: item.inputTokens,
         outputTokens: item.outputTokens,
         cachedTokens: item.cachedTokens,
@@ -1273,10 +1276,14 @@ export const buildAccountRows = (rows: MonitoringEventRow[]): MonitoringAccountR
         lastSeenAt: item.lastSeenAt,
         recentPattern: buildRecentPattern(item.rows),
         models: Array.from(item.modelMap.values())
-          .map((model) => ({
-            ...model,
-            successRate: model.totalCalls > 0 ? model.successCalls / model.totalCalls : 1,
-          }))
+          .map((model) => {
+            const completedModelCalls = model.successCalls + model.failureCalls;
+            return {
+              ...model,
+              successRate:
+                completedModelCalls > 0 ? model.successCalls / completedModelCalls : 1,
+            };
+          })
           .sort(
             (left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls
           ),
@@ -1421,35 +1428,44 @@ export const buildApiKeyRows = (rows: MonitoringEventRow[]): MonitoringApiKeyRow
   });
 
   return Array.from(grouped.values())
-    .map((item) => ({
-      id: item.id,
-      apiKeyHash: item.apiKeyHash,
-      apiKeyLabel: item.apiKeyLabel || item.apiKeyMasked || formatApiKeyHashLabel(item.apiKeyHash),
-      apiKeyMasked: item.apiKeyMasked || item.apiKeyLabel || formatApiKeyHashLabel(item.apiKeyHash),
-      isUnknown: item.isUnknown,
-      authLabels: Array.from(item.authLabels).filter(Boolean).sort(),
-      sourceLabels: Array.from(item.sourceLabels).filter(Boolean).sort(),
-      channels: Array.from(item.channels).filter(Boolean).sort(),
-      totalCalls: item.totalCalls,
-      successCalls: item.successCalls,
-      failureCalls: item.failureCalls,
-      successRate: item.totalCalls > 0 ? item.successCalls / item.totalCalls : 1,
-      inputTokens: item.inputTokens,
-      outputTokens: item.outputTokens,
-      cachedTokens: item.cachedTokens,
-      totalTokens: item.totalTokens,
-      totalCost: item.totalCost,
-      averageLatencyMs: item.latencyCount > 0 ? item.latencySum / item.latencyCount : null,
-      lastSeenAt: item.lastSeenAt,
-      models: Array.from(item.modelMap.values())
-        .map((model) => ({
-          ...model,
-          successRate: model.totalCalls > 0 ? model.successCalls / model.totalCalls : 1,
-        }))
-        .sort(
-          (left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls
-        ),
-    }))
+    .map((item) => {
+      const completedCalls = item.successCalls + item.failureCalls;
+      return {
+        id: item.id,
+        apiKeyHash: item.apiKeyHash,
+        apiKeyLabel:
+          item.apiKeyLabel || item.apiKeyMasked || formatApiKeyHashLabel(item.apiKeyHash),
+        apiKeyMasked:
+          item.apiKeyMasked || item.apiKeyLabel || formatApiKeyHashLabel(item.apiKeyHash),
+        isUnknown: item.isUnknown,
+        authLabels: Array.from(item.authLabels).filter(Boolean).sort(),
+        sourceLabels: Array.from(item.sourceLabels).filter(Boolean).sort(),
+        channels: Array.from(item.channels).filter(Boolean).sort(),
+        totalCalls: item.totalCalls,
+        successCalls: item.successCalls,
+        failureCalls: item.failureCalls,
+        successRate: completedCalls > 0 ? item.successCalls / completedCalls : 1,
+        inputTokens: item.inputTokens,
+        outputTokens: item.outputTokens,
+        cachedTokens: item.cachedTokens,
+        totalTokens: item.totalTokens,
+        totalCost: item.totalCost,
+        averageLatencyMs: item.latencyCount > 0 ? item.latencySum / item.latencyCount : null,
+        lastSeenAt: item.lastSeenAt,
+        models: Array.from(item.modelMap.values())
+          .map((model) => {
+            const completedModelCalls = model.successCalls + model.failureCalls;
+            return {
+              ...model,
+              successRate:
+                completedModelCalls > 0 ? model.successCalls / completedModelCalls : 1,
+            };
+          })
+          .sort(
+            (left, right) => right.totalCost - left.totalCost || right.totalCalls - left.totalCalls
+          ),
+      };
+    })
     .sort(
       (left, right) =>
         right.lastSeenAt - left.lastSeenAt ||
@@ -2140,7 +2156,8 @@ const buildEventRows = (
           endpointPath,
           endpointMethod,
           authMeta?.provider || snapshotProvider,
-          authMeta?.planType
+          authMeta?.planType,
+          outcome
         ),
       } satisfies MonitoringEventRow;
     })

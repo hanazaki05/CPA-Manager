@@ -2548,6 +2548,7 @@ func (s *Store) queryEvents(ctx context.Context, whereClause string, args []any,
 		}
 		event.RawJSON = rawJSON.String
 		event.Failed = failed != 0
+		event.Outcome = usage.OutcomeFromRawJSON(event.RawJSON, event.Failed)
 		if latency.Valid {
 			value := latency.Int64
 			event.LatencyMS = &value

@@ -42,6 +42,7 @@ type Event struct {
 	TotalTokens           int64  `json:"total_tokens"`
 	LatencyMS             *int64 `json:"latency_ms,omitempty"`
 	Failed                bool   `json:"failed"`
+	Outcome               string `json:"outcome,omitempty"`
 	RawJSON               string `json:"raw_json,omitempty"`
 	CreatedAtMS           int64  `json:"created_at_ms"`
 }
@@ -102,6 +103,7 @@ type Payload struct {
 	TotalRequests int64                    `json:"total_requests"`
 	SuccessCount  int64                    `json:"success_count"`
 	FailureCount  int64                    `json:"failure_count"`
+	CanceledCount int64                    `json:"canceled_count,omitempty"`
 	TotalTokens   int64                    `json:"total_tokens"`
 	LatencySumMS  int64                    `json:"latency_sum_ms,omitempty"`
 	LatencyCount  int64                    `json:"latency_count,omitempty"`
@@ -110,6 +112,12 @@ type Payload struct {
 	APIs          map[string]*APIAggregate `json:"apis"`
 	Facets        Facets                   `json:"facets,omitempty"`
 }
+
+const (
+	OutcomeSuccess  = "success"
+	OutcomeFailed   = "failed"
+	OutcomeCanceled = "canceled"
+)
 
 var endpointPattern = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\S+)`)
 
@@ -152,8 +160,12 @@ func NormalizeRaw(raw []byte) (Event, error) {
 		totalTokens = inputTokens + outputTokens + reasoningTokens + maxInt64(cachedTokens, cacheTokens)
 	}
 
+	outcome := NormalizeOutcome(readString(record, "outcome", "result"), false)
+	failed := readFailed(record, outcome)
+	if outcome == "" {
+		outcome = NormalizeOutcome("", failed)
+	}
 	latencyMS := readOptionalInt(record, "latency_ms", "latencyMs", "duration_ms", "durationMs", "elapsed_ms", "elapsedMs")
-	failed := readFailed(record)
 	sourceRaw := readString(record, "source", "api_key", "apiKey", "key", "account", "email")
 	source := maskSource(sourceRaw)
 	apiKey := readString(record, "api_key", "apiKey", "key")
@@ -196,6 +208,7 @@ func NormalizeRaw(raw []byte) (Event, error) {
 		TotalTokens:           totalTokens,
 		LatencyMS:             latencyMS,
 		Failed:                failed,
+		Outcome:               outcome,
 		RawJSON:               string(redactedJSON),
 		CreatedAtMS:           time.Now().UnixMilli(),
 	}
@@ -209,10 +222,14 @@ func NormalizeRaw(raw []byte) (Event, error) {
 func BuildPayload(events []Event) Payload {
 	payload := Payload{APIs: map[string]*APIAggregate{}}
 	for _, event := range events {
+		outcome := NormalizeOutcome(event.Outcome, event.Failed)
 		payload.TotalRequests++
-		if event.Failed {
+		switch outcome {
+		case OutcomeCanceled:
+			payload.CanceledCount++
+		case OutcomeFailed:
 			payload.FailureCount++
-		} else {
+		default:
 			payload.SuccessCount++
 		}
 		payload.TotalTokens += event.TotalTokens
@@ -259,6 +276,7 @@ func BuildPayload(events []Event) Payload {
 			LatencyMS:             event.LatencyMS,
 			ResolvedModel:         event.ResolvedModel,
 			Failed:                event.Failed,
+			Outcome:               outcome,
 			Tokens: Tokens{
 				InputTokens:     event.InputTokens,
 				OutputTokens:    event.OutputTokens,
@@ -338,7 +356,16 @@ func readTokenFields(record map[string]any) (int64, int64, int64, int64, int64, 
 	return input, output, reasoning, cached, cache, total
 }
 
-func readFailed(record map[string]any) bool {
+func readFailed(record map[string]any, outcome string) bool {
+	if outcome == OutcomeCanceled {
+		return false
+	}
+	if outcome == OutcomeSuccess {
+		return false
+	}
+	if outcome == OutcomeFailed {
+		return true
+	}
 	if value, ok := first(record, "failed", "is_failed", "isFailed").(bool); ok {
 		return value
 	}
@@ -350,6 +377,34 @@ func readFailed(record map[string]any) bool {
 		return true
 	}
 	return first(record, "error", "error_message", "errorMessage") != nil
+}
+
+func NormalizeOutcome(outcome string, failed bool) string {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case OutcomeSuccess, "ok":
+		return OutcomeSuccess
+	case OutcomeFailed, "failure", "error":
+		return OutcomeFailed
+	case OutcomeCanceled, "cancelled", "interrupted", "client_canceled", "client_cancelled", "context_canceled":
+		return OutcomeCanceled
+	default:
+		if failed {
+			return OutcomeFailed
+		}
+		return ""
+	}
+}
+
+func OutcomeFromRawJSON(raw string, failed bool) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return NormalizeOutcome("", failed)
+	}
+	var record map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &record); err != nil {
+		return NormalizeOutcome("", failed)
+	}
+	return NormalizeOutcome(readString(record, "outcome", "result"), failed)
 }
 
 func readOptionalInt(record map[string]any, keys ...string) *int64 {
@@ -442,6 +497,7 @@ func buildEventHash(event Event) string {
 		strconv.FormatInt(event.ReasoningTokens, 10),
 		strconv.FormatInt(maxInt64(event.CachedTokens, event.CacheTokens), 10),
 		strconv.FormatBool(event.Failed),
+		NormalizeOutcome(event.Outcome, event.Failed),
 	}
 	if event.LatencyMS != nil {
 		parts = append(parts, strconv.FormatInt(*event.LatencyMS, 10))

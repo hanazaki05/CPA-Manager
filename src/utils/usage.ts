@@ -67,6 +67,8 @@ export interface UsageDetailWithEndpoint extends UsageDetail {
   __timestampMs: number;
 }
 
+export type UsageOutcome = 'success' | 'failed' | 'canceled';
+
 export interface DurationFormatOptions {
   maxUnits?: number;
   invalidText?: string;
@@ -105,6 +107,28 @@ const readDetailString = (value: unknown): string | undefined => {
   if (value === null || value === undefined) return undefined;
   const text = String(value).trim();
   return text || undefined;
+};
+
+const readUsageOutcome = (value: unknown, failed: boolean): UsageOutcome => {
+  const normalized = readDetailString(value)?.toLowerCase();
+  switch (normalized) {
+    case 'success':
+    case 'ok':
+      return 'success';
+    case 'failed':
+    case 'failure':
+    case 'error':
+      return 'failed';
+    case 'canceled':
+    case 'cancelled':
+    case 'interrupted':
+    case 'client_canceled':
+    case 'client_cancelled':
+    case 'context_canceled':
+      return 'canceled';
+    default:
+      return failed ? 'failed' : 'success';
+  }
 };
 
 const getApisRecord = (usageData: unknown): Record<string, unknown> | null => {
@@ -280,6 +304,7 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
         const timestamp = detailRaw.timestamp;
         const timestampMs = parseTimestampMs(timestamp);
         const latencyMs = extractLatencyMs(detailRaw);
+        const outcome = readUsageOutcome(detailRaw.outcome ?? detailRaw.result, detailRaw.failed === true);
         details.push({
           timestamp,
           source: normalizeSourceWithCache(sourceCache, detailRaw.source),
@@ -355,6 +380,7 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
         const timestamp = detailRaw.timestamp;
         const timestampMs = parseTimestampMs(timestamp);
         const latencyMs = extractLatencyMs(detailRaw);
+        const outcome = readUsageOutcome(detailRaw.outcome ?? detailRaw.result, detailRaw.failed === true);
         details.push({
           timestamp,
           source: normalizeSourceWithCache(sourceCache, detailRaw.source),

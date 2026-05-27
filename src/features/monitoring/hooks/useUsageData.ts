@@ -26,6 +26,7 @@ export interface UsagePayload {
   total_requests?: number;
   success_count?: number;
   failure_count?: number;
+  canceled_count?: number;
   total_tokens?: number;
   apis?: Record<string, unknown>;
   [key: string]: unknown;

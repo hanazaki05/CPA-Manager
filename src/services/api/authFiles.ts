@@ -451,9 +451,10 @@ export const authFilesApi = {
       return { status: 'ok', deleted: 0, files: [], failed: [] };
     }
 
-    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/auth-files', {
-      data: { names: requestedNames },
-    });
+    const query = requestedNames
+      .map((name) => `name=${encodeURIComponent(name)}`)
+      .join('&');
+    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>(`/auth-files?${query}`);
     return normalizeBatchDeleteResponse(payload, requestedNames);
   },
 
