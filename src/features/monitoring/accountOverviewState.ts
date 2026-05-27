@@ -8,7 +8,7 @@ import type {
 
 export type MonitoringAccountOverviewMode = 'table' | 'card';
 
-export type MonitoringStatusFilter = 'all' | 'success' | 'failed';
+export type MonitoringStatusFilter = 'all' | 'success' | 'failed' | 'canceled';
 
 export type MonitoringFilters = {
   account: string;
@@ -252,7 +252,7 @@ const normalizeFilterValue = (value: unknown): string => {
 };
 
 const normalizeStatusFilter = (value: unknown): MonitoringStatusFilter =>
-  value === 'success' || value === 'failed' ? value : 'all';
+  value === 'success' || value === 'failed' || value === 'canceled' ? value : 'all';
 
 export const normalizeMonitoringFilters = (value: unknown): MonitoringFilters => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -652,6 +652,10 @@ const buildStatusDataForRows = (
 
     const bucketIndex = clampStatusBucketIndex(row.timestampMs, bounds);
     const detail = statusData.blockDetails[bucketIndex];
+
+    if (row.outcome === 'canceled') {
+      return;
+    }
 
     if (row.failed) {
       detail.failure += 1;

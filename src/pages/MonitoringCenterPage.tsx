@@ -465,10 +465,12 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
   const enriched = sortedAsc.map((row) => {
     const streamKey = [row.account, row.provider, row.model, row.channel].join('::');
     const previous = metricsByStream.get(streamKey) ?? { total: 0, success: 0, pattern: [] };
-    const nextPattern = [...previous.pattern, !row.failed].slice(-10);
+    const nextPattern = row.statsIncluded
+      ? [...previous.pattern, row.outcome === 'success'].slice(-10)
+      : previous.pattern;
     const next = {
       total: previous.total + (row.statsIncluded ? 1 : 0),
-      success: previous.success + (row.statsIncluded && !row.failed ? 1 : 0),
+      success: previous.success + (row.statsIncluded && row.outcome === 'success' ? 1 : 0),
       pattern: nextPattern,
     };
     metricsByStream.set(streamKey, next);
@@ -488,6 +490,21 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
       right.requestCount - left.requestCount ||
       right.id.localeCompare(left.id)
   );
+};
+
+const realtimeOutcomeTone = (row: MonitoringEventRow): MonitoringStatusTone => {
+  if (row.outcome === 'canceled') return 'warn';
+  return row.failed ? 'bad' : 'good';
+};
+
+const realtimeOutcomeLabel = (row: MonitoringEventRow, t: TFunction) => {
+  if (row.outcome === 'canceled') return t('monitoring.result_canceled');
+  return row.failed ? t('monitoring.result_failed') : t('monitoring.result_success');
+};
+
+const realtimeOutcomeIconClass = (row: MonitoringEventRow) => {
+  if (row.outcome === 'canceled') return styles.logTypeIconCanceled;
+  return row.failed ? styles.logTypeIconFailed : styles.logTypeIconSuccess;
 };
 
 function SummaryCard({ label, value, meta, tone, variant = 'primary' }: SummaryCardProps) {
@@ -2160,6 +2177,7 @@ export function MonitoringCenterPage() {
       { value: 'all', label: t('monitoring.filter_all_statuses') },
       { value: 'success', label: t('monitoring.filter_status_success') },
       { value: 'failed', label: t('monitoring.filter_status_failed') },
+      { value: 'canceled', label: t('monitoring.filter_status_canceled') },
     ],
     [t]
   );
@@ -2208,10 +2226,13 @@ export function MonitoringCenterPage() {
         if (selectedApiKeyHash !== 'all' && row.apiKeyHash !== selectedApiKeyHash) {
           return false;
         }
-        if (selectedStatus === 'success' && row.failed) {
+        if (selectedStatus === 'success' && row.outcome !== 'success') {
           return false;
         }
-        if (selectedStatus === 'failed' && !row.failed) {
+        if (selectedStatus === 'failed' && row.outcome !== 'failed') {
+          return false;
+        }
+        if (selectedStatus === 'canceled' && row.outcome !== 'canceled') {
           return false;
         }
         return true;
@@ -3721,7 +3742,7 @@ export function MonitoringCenterPage() {
                         <span
                           className={[
                             styles.logTypeIcon,
-                            row.failed ? styles.logTypeIconFailed : styles.logTypeIconSuccess,
+                            realtimeOutcomeIconClass(row),
                           ]
                             .filter(Boolean)
                             .join(' ')}
@@ -3750,10 +3771,8 @@ export function MonitoringCenterPage() {
                       </div>
                     </td>
                     <td>
-                      <StatusBadge tone={row.failed ? 'bad' : 'good'}>
-                        {row.failed
-                          ? t('monitoring.result_failed')
-                          : t('monitoring.result_success')}
+                      <StatusBadge tone={realtimeOutcomeTone(row)}>
+                        {realtimeOutcomeLabel(row, t)}
                       </StatusBadge>
                     </td>
                     <td

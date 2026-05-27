@@ -176,6 +176,11 @@ func eventFromExportedRecord(record map[string]any) (Event, bool, error) {
 		totalTokens = inputTokens + outputTokens + reasoningTokens + maxInt64(cachedTokens, cacheTokens)
 	}
 
+	outcome := NormalizeOutcome(readString(record, "outcome", "result"), false)
+	failed := readFailed(record, outcome)
+	if outcome == "" {
+		outcome = NormalizeOutcome("", failed)
+	}
 	event := Event{
 		RequestID:             readString(record, "request_id", "requestId"),
 		EventHash:             eventHash,
@@ -205,8 +210,18 @@ func eventFromExportedRecord(record map[string]any) (Event, bool, error) {
 		TotalTokens:           totalTokens,
 		LatencyMS:             readOptionalInt(record, "latency_ms", "latencyMs"),
 		Failed:                readBool(record, "failed", "is_failed", "isFailed"),
+		Outcome:               NormalizeOutcome(readString(record, "outcome", "result"), false),
 		RawJSON:               readString(record, "raw_json", "rawJson"),
 		CreatedAtMS:           readInt(record, "created_at_ms", "createdAtMs"),
+	}
+	if event.Outcome == "" {
+		event.Outcome = OutcomeFromRawJSON(event.RawJSON, event.Failed)
+	}
+	switch event.Outcome {
+	case OutcomeCanceled:
+		event.Failed = false
+	case OutcomeFailed:
+		event.Failed = true
 	}
 	if event.Model == "" {
 		event.Model = "-"
@@ -326,6 +341,11 @@ func eventFromLegacyDetail(
 	if requestID == "" {
 		requestID = legacyRequestID(endpoint, model, normalizedTimestamp, rawJSON, endpointIndex, modelIndex, detailIndex)
 	}
+	outcome := NormalizeOutcome(readString(detail, "outcome", "result"), false)
+	failed := readFailed(detail, outcome)
+	if outcome == "" {
+		outcome = NormalizeOutcome("", failed)
+	}
 
 	event := Event{
 		RequestID:             requestID,
@@ -354,7 +374,8 @@ func eventFromLegacyDetail(
 		CacheTokens:           cacheTokens,
 		TotalTokens:           totalTokens,
 		LatencyMS:             readOptionalInt(detail, "latency_ms", "latencyMs", "duration_ms", "durationMs", "elapsed_ms", "elapsedMs"),
-		Failed:                readFailed(detail),
+		Failed:                failed,
+		Outcome:               outcome,
 		RawJSON:               rawJSON,
 		CreatedAtMS:           now,
 	}

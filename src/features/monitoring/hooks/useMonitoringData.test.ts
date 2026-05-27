@@ -42,6 +42,7 @@ const createMonitoringEventRow = (
   channelHost: overrides.channelHost ?? 'example.com',
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
+  outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 1200,
   inputTokens: overrides.inputTokens ?? 10,
@@ -68,6 +69,26 @@ describe('buildAccountRows', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].authIndices).toEqual(['auth-123456', 'auth-999999']);
+  });
+
+  it('keeps canceled rows out of account success rates and recent patterns', () => {
+    const rows = buildAccountRows([
+      createMonitoringEventRow(),
+      createMonitoringEventRow({
+        id: 'row-canceled',
+        timestampMs: Date.parse('2026-05-09T04:12:43.000Z'),
+        failed: false,
+        outcome: 'canceled',
+        statsIncluded: false,
+      }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalCalls).toBe(2);
+    expect(rows[0].successCalls).toBe(1);
+    expect(rows[0].failureCalls).toBe(0);
+    expect(rows[0].successRate).toBe(1);
+    expect(rows[0].recentPattern).toEqual([true]);
   });
 });
 
@@ -135,6 +156,25 @@ describe('buildApiKeyRows', () => {
     expect(rows.every((row) => row.isUnknown)).toBe(true);
     expect(rows[0].authLabels.length).toBeGreaterThan(0);
     expect(rows[0].id).not.toBe(rows[1].id);
+  });
+
+  it('keeps canceled rows out of api key success rates', () => {
+    const rows = buildApiKeyRows([
+      createMonitoringEventRow({ apiKeyHash: 'hash-1' }),
+      createMonitoringEventRow({
+        id: 'row-canceled',
+        apiKeyHash: 'hash-1',
+        failed: false,
+        outcome: 'canceled',
+        statsIncluded: false,
+      }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalCalls).toBe(2);
+    expect(rows[0].successCalls).toBe(1);
+    expect(rows[0].failureCalls).toBe(0);
+    expect(rows[0].successRate).toBe(1);
   });
 });
 

@@ -14,6 +14,7 @@ import {
   normalizeAccountOverviewMode,
   normalizeAccountOverviewUiState,
   normalizeAccountSortState,
+  normalizeMonitoringFilters,
   sortAccountRows,
 } from './accountOverviewState';
 import type { AuthFileItem } from '@/types';
@@ -69,6 +70,7 @@ const createEventRow = (overrides: Partial<MonitoringEventRow> = {}): Monitoring
   channelHost: overrides.channelHost ?? 'localhost',
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
+  outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 120,
   inputTokens: overrides.inputTokens ?? 10,
@@ -89,6 +91,8 @@ describe('accountOverviewState', () => {
   });
 
   it('normalizes persisted overview ui state', () => {
+    expect(normalizeMonitoringFilters({ status: 'canceled' }).status).toBe('canceled');
+
     expect(
       normalizeAccountOverviewUiState({
         mode: 'card',
@@ -397,6 +401,13 @@ describe('accountOverviewState', () => {
         id: 'late-failure',
         timestampMs: endMs,
         failed: true,
+        authIndex: '1',
+      }),
+      createEventRow({
+        id: 'canceled',
+        timestampMs: startMs + 10 * 60_000,
+        failed: false,
+        outcome: 'canceled',
         authIndex: '1',
       }),
       createEventRow({
