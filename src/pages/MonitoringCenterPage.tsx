@@ -44,7 +44,6 @@ import {
 import {
   buildAccountRows,
   buildApiKeyRows,
-  buildMonitoringSummary,
   buildRealtimeMonitorRows,
   getRangeBounds,
   type MonitoringAccountModelSpendRow,
@@ -67,6 +66,7 @@ import {
   resolveMonitoringStatusRangeBounds,
   shouldClampAccountOverviewPage,
   shouldResetAccountOverviewPage,
+  sortApiKeyRows,
   sortAccountRows,
   readAccountOverviewUiState,
   writeAccountOverviewUiState,
@@ -74,6 +74,8 @@ import {
   writeMonitoringTransientUiState,
   normalizeMonitoringAutoRefreshMs,
   type AccountOverviewPageResetState,
+  type ApiKeySortKey,
+  type ApiKeySortState,
   type AccountSortKey,
   type MonitoringAccountAuthState,
   type AccountSortState,
@@ -88,6 +90,7 @@ import {
   getNextMonitoringStatusBlockIndex,
 } from '@/features/monitoring/healthStatusAccessibility';
 import { buildRealtimeSourceDisplay } from '@/features/monitoring/realtimeSourceDisplay';
+import { buildModelPriceCandidateModels } from '@/features/monitoring/modelPriceCandidates';
 import { MonitoringPanel } from '@/features/monitoring/components/MonitoringPanel';
 import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
@@ -110,6 +113,7 @@ import {
   normalizeAuthIndex,
   type ModelPrice,
 } from '@/utils/usage';
+import { buildLegacyAuthIndexAliases } from '@/features/monitoring/legacyAuthIndexAliases';
 import { downloadBlob } from '@/utils/download';
 import { sha256Hex } from '@/utils/apiKeyHash';
 import styles from './MonitoringCenterPage.module.scss';
@@ -202,11 +206,15 @@ type AccountQuotaState = {
   lastRefreshedAt?: number;
 };
 
-type AccountOverviewColumn = {
+type SortableOverviewColumn<TSortKey extends string> = {
   key: string;
   label: string;
-  sortKey?: AccountSortKey;
+  sortKey?: TSortKey;
 };
+
+type AccountOverviewColumn = SortableOverviewColumn<AccountSortKey>;
+
+type ApiKeyOverviewColumn = SortableOverviewColumn<ApiKeySortKey>;
 
 type AccountSummaryMetric = {
   key: string;
@@ -269,6 +277,25 @@ const buildPaginationState = <T,>(
   };
 };
 
+const buildRemotePaginationState = <T,>(
+  items: readonly T[],
+  page: number,
+  pageSize: number,
+  count: number
+): PaginationState<T> => {
+  const safePageSize = Math.max(1, pageSize);
+  const totalPages = Math.max(1, Math.ceil(Math.max(0, count) / safePageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const startItem = count > 0 ? (currentPage - 1) * safePageSize + 1 : 0;
+  return {
+    currentPage,
+    totalPages,
+    pageItems: [...items],
+    startItem,
+    endItem: count > 0 ? Math.min(startItem + items.length - 1, count) : 0,
+  };
+};
+
 const parsePageSize = (value: string, fallback: number) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -316,13 +343,6 @@ const buildAccountSecondaryText = (row: MonitoringAccountRow) => {
     return joinShort(extraChannels, 2);
   }
   return '';
-};
-
-const buildAccountOptionLabel = (row: MonitoringAccountRow) => {
-  if (!row.displayAccount || row.displayAccount === row.account) {
-    return row.account;
-  }
-  return `${row.displayAccount} / ${row.account}`;
 };
 
 const buildAccountSummaryMetrics = (
@@ -456,14 +476,20 @@ const buildApiKeySummaryMetrics = (
   },
 ];
 
-const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
+export const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
   const sortedAsc = [...rows].sort(
     (left, right) => left.timestampMs - right.timestampMs || left.id.localeCompare(right.id)
   );
   const metricsByStream = new Map<string, { total: number; success: number; pattern: boolean[] }>();
 
   const enriched = sortedAsc.map((row) => {
-    const streamKey = [row.account, row.provider, row.model, row.channel].join('::');
+    const fallbackStreamKey = [row.account, row.provider, row.model, row.channel].join('::');
+    const serverTotal = row.serverStreamTotalCalls;
+    const hasServerAggregate = typeof serverTotal === 'number' && serverTotal > 0;
+    const streamKey =
+      hasServerAggregate && row.serverStreamKey
+        ? `server:${row.serverStreamKey}`
+        : fallbackStreamKey;
     const previous = metricsByStream.get(streamKey) ?? { total: 0, success: 0, pattern: [] };
     const nextPattern = row.statsIncluded
       ? [...previous.pattern, row.outcome === 'success'].slice(-10)
@@ -474,13 +500,26 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
       pattern: nextPattern,
     };
     metricsByStream.set(streamKey, next);
+    const serverRequestCount = row.serverStreamRequestCount;
+    const serverSuccessToEvent = row.serverStreamSuccessCallsToEvent;
+    const serverPatternToEvent = row.serverStreamRecentPatternToEvent;
+    const hasServerEventMetrics = typeof serverRequestCount === 'number' && serverRequestCount > 0;
 
     return {
       ...row,
       streamKey,
-      requestCount: next.total,
-      successRate: next.total > 0 ? next.success / next.total : 1,
-      recentPattern: nextPattern,
+      requestCount: hasServerEventMetrics ? serverRequestCount : next.total,
+      successRate: hasServerEventMetrics
+        ? Math.max(serverSuccessToEvent ?? 0, 0) / serverRequestCount
+        : next.total > 0
+          ? next.success / next.total
+          : 1,
+      recentPattern:
+        hasServerEventMetrics &&
+        Array.isArray(serverPatternToEvent) &&
+        serverPatternToEvent.length > 0
+          ? serverPatternToEvent
+          : nextPattern,
     } satisfies RealtimeLogRow;
   });
 
@@ -1898,6 +1937,9 @@ export function MonitoringCenterPage() {
   const [accountSort, setAccountSort] = useState<AccountSortState>(
     initialAccountOverviewUiState.current.sort
   );
+  const [apiKeySort, setApiKeySort] = useState<ApiKeySortState>(
+    initialAccountOverviewUiState.current.apiKeySort
+  );
   const [accountPageByMode, setAccountPageByMode] = useState(() => ({
     table: 1,
     card: initialAccountOverviewUiState.current.cardPagination.page,
@@ -1973,8 +2015,78 @@ export function MonitoringCenterPage() {
     return '';
   }, [customDraftEndMs, customDraftStartMs, t]);
 
+  const buildUsageQuery = useCallback(
+    (nowMs: number) => {
+      const bounds = getRangeBounds(timeRange, nowMs, customTimeRange);
+      if (!bounds) return undefined;
+      return {
+        startMs: Number.isFinite(bounds.startMs) ? bounds.startMs : undefined,
+        endMs: Number.isFinite(bounds.endMs) ? bounds.endMs : undefined,
+        account: selectedAccount !== 'all' ? selectedAccount : undefined,
+        provider: selectedProvider !== 'all' ? selectedProvider : undefined,
+        model: selectedModel !== 'all' ? selectedModel : undefined,
+        channel: selectedChannel !== 'all' ? selectedChannel : undefined,
+        apiKeyHash: selectedApiKeyHash !== 'all' ? selectedApiKeyHash : undefined,
+        status: selectedStatus !== 'all' ? selectedStatus : undefined,
+        search: deferredSearch.trim() || undefined,
+        searchApiKeyHash: deferredSearch.trim() ? deferredSearchApiKeyHash : undefined,
+      };
+    },
+    [
+      customTimeRange,
+      deferredSearch,
+      deferredSearchApiKeyHash,
+      selectedAccount,
+      selectedApiKeyHash,
+      selectedChannel,
+      selectedModel,
+      selectedProvider,
+      selectedStatus,
+      timeRange,
+    ]
+  );
+  const usageQuery = useMemo(() => buildUsageQuery(Date.now()), [buildUsageQuery]);
+
+  const usagePageQueries = useMemo(
+    () => ({
+      accounts: {
+        page: accountPage,
+        pageSize: accountPageSize,
+        sortKey: accountSort.key,
+        sortDirection: accountSort.direction,
+      },
+      apiKeys: {
+        page: apiKeyPage,
+        pageSize: apiKeyPageSize,
+        sortKey: apiKeySort.key,
+        sortDirection: apiKeySort.direction,
+      },
+      realtime: {
+        page: realtimePage,
+        pageSize: realtimePageSize,
+      },
+      models: {
+        page: 1,
+        pageSize: 500,
+      },
+    }),
+    [
+      accountPage,
+      accountPageSize,
+      accountSort.direction,
+      accountSort.key,
+      apiKeyPage,
+      apiKeyPageSize,
+      apiKeySort.direction,
+      apiKeySort.key,
+      realtimePage,
+      realtimePageSize,
+    ]
+  );
+
   const {
     usage,
+    usagePages,
     loading: usageLoading,
     error: usageError,
     lastRefreshedAt,
@@ -1983,22 +2095,29 @@ export function MonitoringCenterPage() {
     providerAliases,
     usageServiceAvailable,
     setModelPrices,
+    loadModelPrices,
     loadApiKeyAliases,
     loadProviderAliases,
     syncModelPrices,
     exportUsage,
     importUsage,
     loadUsage,
-  } = useUsageData();
+  } = useUsageData(usageQuery, usagePageQueries);
 
   const {
     loading: monitoringLoading,
     error: monitoringError,
     authFiles,
     filteredRows,
+    accountPageRows,
+    apiKeyPageRows,
+    realtimePageRows,
+    filterFacets,
     refreshMeta,
+    summary: monitoringSummary,
   } = useMonitoringData({
     usage,
+    usagePages,
     config,
     modelPrices,
     apiKeyAliases,
@@ -2010,8 +2129,21 @@ export function MonitoringCenterPage() {
   });
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadUsage(), loadApiKeyAliases(), loadProviderAliases(), refreshMeta(false)]);
-  }, [loadApiKeyAliases, loadProviderAliases, loadUsage, refreshMeta]);
+    await Promise.all([
+      loadUsage(buildUsageQuery(Date.now())),
+      loadModelPrices(),
+      loadApiKeyAliases(),
+      loadProviderAliases(),
+      refreshMeta(false),
+    ]);
+  }, [
+    buildUsageQuery,
+    loadApiKeyAliases,
+    loadModelPrices,
+    loadProviderAliases,
+    loadUsage,
+    refreshMeta,
+  ]);
 
   const setCurrentAccountPage = useCallback(
     (page: number) => {
@@ -2062,6 +2194,7 @@ export function MonitoringCenterPage() {
     writeAccountOverviewUiState({
       mode: accountOverviewMode,
       sort: accountSort,
+      apiKeySort,
       cardPagination: {
         page: accountPageByMode.card,
         pageSize: accountPageSizeByMode.card,
@@ -2088,6 +2221,7 @@ export function MonitoringCenterPage() {
     accountPageSizeByMode.card,
     accountPageSizeByMode.table,
     accountSort,
+    apiKeySort,
     apiKeyPageSize,
     autoRefreshMs,
     realtimePageSize,
@@ -2111,57 +2245,53 @@ export function MonitoringCenterPage() {
   const providerOptions = useMemo(
     () => [
       { value: 'all', label: t('monitoring.filter_all_providers') },
-      ...Array.from(new Set(filteredRows.map((row) => row.provider)))
+      ...Array.from(new Set(filterFacets.providers))
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right))
         .map((value) => ({ value, label: value })),
     ],
-    [filteredRows, t]
+    [filterFacets.providers, t]
   );
-
-  const accountOptionRows = useMemo(() => buildAccountRows(filteredRows), [filteredRows]);
 
   const accountOptions = useMemo(
     () => [
       { value: 'all', label: t('monitoring.filter_all_accounts') },
       ...Array.from(
-        new Map(
-          accountOptionRows.map((row) => [row.account, buildAccountOptionLabel(row)])
-        ).entries()
+        new Map(filterFacets.accounts.map((item) => [item.value, item.label])).entries()
       )
         .sort((left, right) => left[1].localeCompare(right[1]))
         .map(([value, label]) => ({ value, label })),
     ],
-    [accountOptionRows, t]
+    [filterFacets.accounts, t]
   );
 
   const modelOptions = useMemo(
     () => [
       { value: 'all', label: t('monitoring.filter_all_models') },
-      ...Array.from(new Set(filteredRows.map((row) => row.model)))
+      ...Array.from(new Set(filterFacets.models))
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right))
         .map((value) => ({ value, label: value })),
     ],
-    [filteredRows, t]
+    [filterFacets.models, t]
   );
 
   const channelOptions = useMemo(
     () => [
       { value: 'all', label: t('monitoring.filter_all_channels') },
-      ...Array.from(new Set(filteredRows.map((row) => row.channel)))
+      ...Array.from(new Set(filterFacets.channels))
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right))
         .map((value) => ({ value, label: value })),
     ],
-    [filteredRows, t]
+    [filterFacets.channels, t]
   );
 
   const apiKeyOptions = useMemo(() => {
     const optionMap = new Map<string, string>();
-    filteredRows.forEach((row) => {
-      if (!row.apiKeyHash || optionMap.has(row.apiKeyHash)) return;
-      optionMap.set(row.apiKeyHash, row.apiKeyLabel || row.apiKeyMasked || row.apiKeyHash);
+    filterFacets.apiKeys.forEach((item) => {
+      if (!item.value || optionMap.has(item.value)) return;
+      optionMap.set(item.value, item.label || item.value);
     });
 
     return [
@@ -2170,7 +2300,7 @@ export function MonitoringCenterPage() {
         .sort((left, right) => left[1].localeCompare(right[1]))
         .map(([value, label]) => ({ value, label })),
     ];
-  }, [filteredRows, t]);
+  }, [filterFacets.apiKeys, t]);
 
   const statusOptions = useMemo(
     () => [
@@ -2184,10 +2314,8 @@ export function MonitoringCenterPage() {
 
   const syncPriceModels = useMemo(
     () =>
-      Array.from(new Set([...filteredRows.map((row) => row.model), ...Object.keys(modelPrices)]))
-        .filter(Boolean)
-        .sort((left, right) => left.localeCompare(right)),
-    [filteredRows, modelPrices]
+      buildModelPriceCandidateModels(filterFacets.models, filteredRows, modelPrices),
+    [filterFacets.models, filteredRows, modelPrices]
   );
 
   const priceModelOptions = useMemo(
@@ -2202,8 +2330,14 @@ export function MonitoringCenterPage() {
     const map = new Map<string, AuthFileItem>();
     authFiles.forEach((file) => {
       const authIndex = normalizeAuthIndex(file['auth_index'] ?? file.authIndex);
-      if (!authIndex || map.has(authIndex)) return;
-      map.set(authIndex, file);
+      if (authIndex && !map.has(authIndex)) {
+        map.set(authIndex, file);
+      }
+      buildLegacyAuthIndexAliases(file).forEach((alias) => {
+        if (!map.has(alias)) {
+          map.set(alias, file);
+        }
+      });
     });
     return map;
   }, [authFiles]);
@@ -2261,7 +2395,7 @@ export function MonitoringCenterPage() {
     [accountStatusBounds, i18n.language, t]
   );
 
-  const scopedSummary = useMemo(() => buildMonitoringSummary(scopedStatsRows), [scopedStatsRows]);
+  const scopedSummary = monitoringSummary;
   const accountRows = useMemo(() => buildAccountRows(scopedRows), [scopedRows]);
   const apiKeyRows = useMemo(() => buildApiKeyRows(scopedRows), [scopedRows]);
   const accountStatusDataByRowId = useMemo(
@@ -2272,30 +2406,105 @@ export function MonitoringCenterPage() {
     const resolvedBounds = resolveMonitoringStatusRangeBounds(scopedRows, accountStatusBounds);
     return resolvedBounds ? buildEmptyMonitoringStatusData(resolvedBounds) : EMPTY_STATUS_BAR_DATA;
   }, [accountStatusBounds, scopedRows]);
-  const accountAuthStateByRowId = useMemo(
-    () => buildMonitoringAccountAuthStateMap(accountRows, authFilesByAuthIndex),
-    [accountRows, authFilesByAuthIndex]
-  );
   const sortedAccountRows = useMemo(
     () => sortAccountRows(accountRows, accountSort),
     [accountRows, accountSort]
+  );
+  const displayedAccountRows = useMemo(
+    () => (accountPageRows ? sortAccountRows(accountPageRows, accountSort) : sortedAccountRows),
+    [accountPageRows, accountSort, sortedAccountRows]
+  );
+  const accountRowsForAuthState = useMemo(() => {
+    const rowsById = new Map<string, MonitoringAccountRow>();
+    accountRows.forEach((row) => rowsById.set(row.id, row));
+    displayedAccountRows.forEach((row) => {
+      if (!rowsById.has(row.id)) {
+        rowsById.set(row.id, row);
+      }
+    });
+    return Array.from(rowsById.values());
+  }, [accountRows, displayedAccountRows]);
+  const accountAuthStateByRowId = useMemo(
+    () => buildMonitoringAccountAuthStateMap(accountRowsForAuthState, authFilesByAuthIndex),
+    [accountRowsForAuthState, authFilesByAuthIndex]
+  );
+  const accountTotalCount =
+    accountPageRows && usagePages?.accounts
+      ? Math.max(0, usagePages.accounts.total_items)
+      : sortedAccountRows.length;
+  const sortedApiKeyRows = useMemo(
+    () => sortApiKeyRows(apiKeyRows, apiKeySort),
+    [apiKeyRows, apiKeySort]
+  );
+  const displayedApiKeyRows = useMemo(
+    () => (apiKeyPageRows ? sortApiKeyRows(apiKeyPageRows, apiKeySort) : sortedApiKeyRows),
+    [apiKeyPageRows, apiKeySort, sortedApiKeyRows]
   );
   const groupedRealtimeRows = useMemo(
     () => buildRealtimeMonitorRows(scopedStatsRows),
     [scopedStatsRows]
   );
-  const realtimeLogRows = useMemo(() => buildRealtimeLogRows(scopedRows), [scopedRows]);
+  const apiKeyTotalCount =
+    apiKeyPageRows && usagePages?.apiKeys
+      ? Math.max(0, usagePages.apiKeys.total_items)
+      : sortedApiKeyRows.length;
+  const realtimeLogRows = useMemo(
+    () => buildRealtimeLogRows(realtimePageRows ?? scopedRows),
+    [realtimePageRows, scopedRows]
+  );
+  const realtimeTotalCount =
+    realtimePageRows && usagePages?.realtime
+      ? Math.max(0, usagePages.realtime.total_items)
+      : realtimeLogRows.length;
   const accountPagination = useMemo(
-    () => buildPaginationState(sortedAccountRows, accountPage, accountPageSize),
-    [accountPage, accountPageSize, sortedAccountRows]
+    () =>
+      accountPageRows && usagePages?.accounts
+        ? buildRemotePaginationState(
+            displayedAccountRows,
+            usagePages.accounts.page,
+            usagePages.accounts.page_size,
+            usagePages.accounts.total_items
+          )
+        : buildPaginationState(sortedAccountRows, accountPage, accountPageSize),
+    [
+      accountPage,
+      accountPageRows,
+      accountPageSize,
+      displayedAccountRows,
+      sortedAccountRows,
+      usagePages?.accounts,
+    ]
   );
   const apiKeyPagination = useMemo(
-    () => buildPaginationState(apiKeyRows, apiKeyPage, apiKeyPageSize),
-    [apiKeyPage, apiKeyPageSize, apiKeyRows]
+    () =>
+      apiKeyPageRows && usagePages?.apiKeys
+        ? buildRemotePaginationState(
+            displayedApiKeyRows,
+            usagePages.apiKeys.page,
+            usagePages.apiKeys.page_size,
+            usagePages.apiKeys.total_items
+          )
+        : buildPaginationState(sortedApiKeyRows, apiKeyPage, apiKeyPageSize),
+    [
+      apiKeyPage,
+      apiKeyPageRows,
+      apiKeyPageSize,
+      displayedApiKeyRows,
+      sortedApiKeyRows,
+      usagePages?.apiKeys,
+    ]
   );
   const realtimePagination = useMemo(
-    () => buildPaginationState(realtimeLogRows, realtimePage, realtimePageSize),
-    [realtimeLogRows, realtimePage, realtimePageSize]
+    () =>
+      realtimePageRows && usagePages?.realtime
+        ? buildRemotePaginationState(
+            realtimeLogRows,
+            usagePages.realtime.page,
+            usagePages.realtime.page_size,
+            usagePages.realtime.total_items
+          )
+        : buildPaginationState(realtimeLogRows, realtimePage, realtimePageSize),
+    [realtimeLogRows, realtimePage, realtimePageRows, realtimePageSize, usagePages?.realtime]
   );
   const accountPageResetState = useMemo<AccountOverviewPageResetState>(
     () => ({
@@ -2341,21 +2550,35 @@ export function MonitoringCenterPage() {
 
   useEffect(() => {
     if (
-      !shouldClampAccountOverviewPage(overallLoading, accountPage, accountPagination.currentPage)
+      !shouldClampAccountOverviewPage(overallLoading, accountPage, accountPagination.currentPage, {
+        requestedPage: accountPage,
+        responsePage: usagePages?.accounts?.page ?? accountPage,
+        requestedPageSize: accountPageSize,
+        responsePageSize: usagePages?.accounts?.page_size ?? accountPageSize,
+      })
     ) {
       return;
     }
 
     setCurrentAccountPage(accountPagination.currentPage);
-  }, [accountPage, accountPagination.currentPage, overallLoading, setCurrentAccountPage]);
+  }, [
+    accountPage,
+    accountPageSize,
+    accountPagination.currentPage,
+    overallLoading,
+    setCurrentAccountPage,
+    usagePages?.accounts?.page,
+    usagePages?.accounts?.page_size,
+  ]);
 
   const accountQuotaTargetsByAccount = useMemo(
-    () => buildMonitoringAccountQuotaTargetsByAccount(accountRows, accountAuthStateByRowId),
-    [accountAuthStateByRowId, accountRows]
+    () =>
+      buildMonitoringAccountQuotaTargetsByAccount(accountRowsForAuthState, accountAuthStateByRowId),
+    [accountAuthStateByRowId, accountRowsForAuthState]
   );
   const accountAuthFilesByAccount = useMemo(() => {
     const map = new Map<string, Map<string, AuthFileItem>>();
-    accountRows.forEach((row) => {
+    accountRowsForAuthState.forEach((row) => {
       const authState = accountAuthStateByRowId.get(row.id);
       if (!authState) return;
       const filesByName = new Map<string, AuthFileItem>();
@@ -2363,7 +2586,7 @@ export function MonitoringCenterPage() {
       map.set(row.account, filesByName);
     });
     return map;
-  }, [accountRows, accountAuthStateByRowId]);
+  }, [accountRowsForAuthState, accountAuthStateByRowId]);
   const scopedFailureCount = scopedRows.filter((row) => row.failed).length;
   const savedPriceEntries = useMemo(
     () => Object.entries(modelPrices).sort((left, right) => left[0].localeCompare(right[0])),
@@ -2424,15 +2647,31 @@ export function MonitoringCenterPage() {
     [t]
   );
 
-  const apiKeyOverviewColumns = useMemo<AccountOverviewColumn[]>(
+  const apiKeyOverviewColumns = useMemo<ApiKeyOverviewColumn[]>(
     () => [
       { key: 'api-key', label: t('monitoring.api_key_summary_col_key') },
-      { key: 'total-calls', label: t('monitoring.total_calls') },
-      { key: 'success-calls', label: t('monitoring.account_overview_col_success') },
-      { key: 'failure-calls', label: t('monitoring.account_overview_col_failure') },
-      { key: 'total-tokens', label: t('monitoring.total_tokens') },
-      { key: 'estimated-cost', label: t('monitoring.account_overview_col_cost') },
-      { key: 'latest-request-time', label: t('monitoring.latest_request_time') },
+      { key: 'total-calls', label: t('monitoring.total_calls'), sortKey: 'totalCalls' },
+      {
+        key: 'success-calls',
+        label: t('monitoring.account_overview_col_success'),
+        sortKey: 'successCalls',
+      },
+      {
+        key: 'failure-calls',
+        label: t('monitoring.account_overview_col_failure'),
+        sortKey: 'failureCalls',
+      },
+      { key: 'total-tokens', label: t('monitoring.total_tokens'), sortKey: 'totalTokens' },
+      {
+        key: 'estimated-cost',
+        label: t('monitoring.account_overview_col_cost'),
+        sortKey: 'totalCost',
+      },
+      {
+        key: 'latest-request-time',
+        label: t('monitoring.latest_request_time'),
+        sortKey: 'lastSeenAt',
+      },
     ],
     [t]
   );
@@ -2449,6 +2688,27 @@ export function MonitoringCenterPage() {
       }));
   }, [accountOverviewColumns, t]);
 
+  const apiKeySortOptions = useMemo(() => {
+    const prefix = t('monitoring.account_overview_sort_prefix');
+    const options: Array<{ value: ApiKeySortKey; label: string }> = [
+      { value: 'totalCalls', label: t('monitoring.total_calls') },
+      { value: 'successCalls', label: t('monitoring.success_calls') },
+      { value: 'failureCalls', label: t('monitoring.failure_calls') },
+      { value: 'successRate', label: t('monitoring.success_rate') },
+      { value: 'totalTokens', label: t('monitoring.total_tokens') },
+      { value: 'inputTokens', label: t('monitoring.input_tokens') },
+      { value: 'outputTokens', label: t('monitoring.output_tokens') },
+      { value: 'cachedTokens', label: t('monitoring.cached_tokens') },
+      { value: 'totalCost', label: t('monitoring.account_overview_col_cost') },
+      { value: 'lastSeenAt', label: t('monitoring.latest_request_time') },
+    ];
+
+    return options.map((option) => ({
+      value: option.value,
+      label: `${prefix}${option.label}`,
+    }));
+  }, [t]);
+
   const accountPageSizeOptions =
     accountOverviewMode === 'card'
       ? ACCOUNT_OVERVIEW_CARD_PAGE_SIZE_OPTIONS
@@ -2458,7 +2718,7 @@ export function MonitoringCenterPage() {
     {
       label: t('monitoring.total_calls'),
       value: formatCompactNumber(scopedSummary.totalCalls),
-      meta: `${accountRows.length} ${t('monitoring.accounts_suffix')}`,
+      meta: `${accountTotalCount} ${t('monitoring.accounts_suffix')}`,
     },
     {
       label: t('monitoring.call_success_rate'),
@@ -2821,6 +3081,33 @@ export function MonitoringCenterPage() {
     },
     [resetCurrentAccountPage]
   );
+
+  const handleApiKeySortKeyChange = useCallback((key: ApiKeySortKey) => {
+    setApiKeyPage(1);
+    setApiKeySort((previous) =>
+      previous.key === key
+        ? previous
+        : {
+            key,
+            direction: 'desc',
+          }
+    );
+  }, []);
+
+  const handleApiKeySort = useCallback((key: ApiKeySortKey) => {
+    setApiKeyPage(1);
+    setApiKeySort((previous) =>
+      previous.key === key
+        ? {
+            key,
+            direction: previous.direction === 'desc' ? 'asc' : 'desc',
+          }
+        : {
+            key,
+            direction: 'desc',
+          }
+    );
+  }, []);
 
   const handleAccountPageChange = useCallback(
     (page: number) => {
@@ -3535,7 +3822,7 @@ export function MonitoringCenterPage() {
                     </Fragment>
                   );
                 })}
-                {sortedAccountRows.length === 0 ? (
+                {accountTotalCount === 0 ? (
                   <tr>
                     <td colSpan={accountOverviewColumns.length}>{renderMonitoringEmptyState()}</td>
                   </tr>
@@ -3543,7 +3830,7 @@ export function MonitoringCenterPage() {
               </tbody>
             </table>
           </div>
-        ) : sortedAccountRows.length > 0 ? (
+        ) : accountPagination.pageItems.length > 0 ? (
           <div className={styles.accountOverviewCardGrid}>
             {accountPagination.pageItems.map((row) => {
               const authState = accountAuthStateByRowId.get(row.id) ?? EMPTY_ACCOUNT_AUTH_STATE;
@@ -3574,7 +3861,7 @@ export function MonitoringCenterPage() {
           renderMonitoringEmptyState()
         )}
         <PaginationControls
-          count={sortedAccountRows.length}
+          count={accountTotalCount}
           currentPage={accountPagination.currentPage}
           totalPages={accountPagination.totalPages}
           startItem={accountPagination.startItem}
@@ -3603,8 +3890,25 @@ export function MonitoringCenterPage() {
         subtitle={t('monitoring.api_key_summary_desc')}
         className={styles.apiKeyPanel}
         extra={
-          <div className={styles.inlineMetrics}>
-            <span>{t('monitoring.api_key_summary_keys_count', { count: apiKeyRows.length })}</span>
+          <div className={styles.accountOverviewHeaderActions}>
+            <div className={styles.accountOverviewToolbarRow}>
+              <div className={styles.inlineMetrics}>
+                <span>
+                  {t('monitoring.api_key_summary_keys_count', { count: apiKeyTotalCount })}
+                </span>
+              </div>
+              <div className={styles.accountOverviewSortBar}>
+                <Select
+                  className={styles.accountOverviewSortSelect}
+                  triggerClassName={styles.accountOverviewSortSelectTrigger}
+                  value={apiKeySort.key}
+                  options={apiKeySortOptions}
+                  onChange={(value) => handleApiKeySortKeyChange(value as ApiKeySortKey)}
+                  ariaLabel={t('monitoring.account_overview_sort_label')}
+                  fullWidth={false}
+                />
+              </div>
+            </div>
           </div>
         }
       >
@@ -3617,9 +3921,49 @@ export function MonitoringCenterPage() {
             </colgroup>
             <thead>
               <tr>
-                {apiKeyOverviewColumns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
+                {apiKeyOverviewColumns.map((column) => {
+                  const sortKey = column.sortKey;
+
+                  if (!sortKey) {
+                    return <th key={column.key}>{column.label}</th>;
+                  }
+
+                  const isActive = apiKeySort.key === sortKey;
+                  const SortIcon = isActive
+                    ? apiKeySort.direction === 'desc'
+                      ? IconChevronDown
+                      : IconChevronUp
+                    : null;
+
+                  return (
+                    <th
+                      key={column.key}
+                      aria-sort={
+                        isActive
+                          ? apiKeySort.direction === 'desc'
+                            ? 'descending'
+                            : 'ascending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className={[
+                          styles.sortableHeaderButton,
+                          isActive ? styles.sortableHeaderButtonActive : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        onClick={() => handleApiKeySort(sortKey)}
+                      >
+                        <span>{column.label}</span>
+                        <span className={styles.sortIndicator} aria-hidden="true">
+                          {SortIcon ? <SortIcon size={14} /> : null}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -3671,7 +4015,7 @@ export function MonitoringCenterPage() {
                   </Fragment>
                 );
               })}
-              {apiKeyRows.length === 0 ? (
+              {apiKeyTotalCount === 0 ? (
                 <tr>
                   <td colSpan={apiKeyOverviewColumns.length}>{renderMonitoringEmptyState()}</td>
                 </tr>
@@ -3680,7 +4024,7 @@ export function MonitoringCenterPage() {
           </table>
         </div>
         <PaginationControls
-          count={apiKeyRows.length}
+          count={apiKeyTotalCount}
           currentPage={apiKeyPagination.currentPage}
           totalPages={apiKeyPagination.totalPages}
           startItem={apiKeyPagination.startItem}
@@ -3699,7 +4043,7 @@ export function MonitoringCenterPage() {
         className={styles.realtimePanel}
         extra={
           <div className={`${styles.inlineMetrics} ${styles.realtimeHeaderActions}`}>
-            <span>{`${t('monitoring.log_rows')}: ${realtimeLogRows.length}`}</span>
+            <span>{`${t('monitoring.log_rows')}: ${realtimeTotalCount}`}</span>
             <span>{`${t('monitoring.recent_failures')}: ${scopedFailureCount}`}</span>
             <button
               type="button"
@@ -3811,7 +4155,7 @@ export function MonitoringCenterPage() {
                   </tr>
                 );
               })}
-              {realtimeLogRows.length === 0 ? (
+              {realtimeTotalCount === 0 ? (
                 <tr>
                   <td colSpan={10}>{renderMonitoringEmptyState()}</td>
                 </tr>
@@ -3820,7 +4164,7 @@ export function MonitoringCenterPage() {
           </table>
         </div>
         <PaginationControls
-          count={realtimeLogRows.length}
+          count={realtimeTotalCount}
           currentPage={realtimePagination.currentPage}
           totalPages={realtimePagination.totalPages}
           startItem={realtimePagination.startItem}

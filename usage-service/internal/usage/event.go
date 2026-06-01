@@ -72,6 +72,11 @@ type Detail struct {
 	Tokens                Tokens `json:"tokens"`
 	Failed                bool   `json:"failed"`
 	Outcome               string `json:"outcome,omitempty"`
+	RequestCount          int64  `json:"request_count"`
+	SuccessCount          int64  `json:"success_count"`
+	FailureCount          int64  `json:"failure_count"`
+	LatencySumMS          int64  `json:"latency_sum_ms"`
+	LatencyCount          int64  `json:"latency_count"`
 }
 
 type ModelAggregate struct {
@@ -82,13 +87,31 @@ type APIAggregate struct {
 	Models map[string]*ModelAggregate `json:"models"`
 }
 
+type FacetOption struct {
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
+}
+
+type Facets struct {
+	Providers []string      `json:"providers,omitempty"`
+	Accounts  []FacetOption `json:"accounts,omitempty"`
+	Models    []string      `json:"models,omitempty"`
+	Channels  []string      `json:"channels,omitempty"`
+	APIKeys   []FacetOption `json:"api_keys,omitempty"`
+}
+
 type Payload struct {
 	TotalRequests int64                    `json:"total_requests"`
 	SuccessCount  int64                    `json:"success_count"`
 	FailureCount  int64                    `json:"failure_count"`
 	CanceledCount int64                    `json:"canceled_count,omitempty"`
 	TotalTokens   int64                    `json:"total_tokens"`
+	LatencySumMS  int64                    `json:"latency_sum_ms,omitempty"`
+	LatencyCount  int64                    `json:"latency_count,omitempty"`
+	LatencyMS     *int64                   `json:"latency_ms,omitempty"`
+	Tokens        Tokens                   `json:"tokens,omitempty"`
 	APIs          map[string]*APIAggregate `json:"apis"`
+	Facets        Facets                   `json:"facets,omitempty"`
 }
 
 const (
@@ -211,6 +234,16 @@ func BuildPayload(events []Event) Payload {
 			payload.SuccessCount++
 		}
 		payload.TotalTokens += event.TotalTokens
+		payload.Tokens.InputTokens += event.InputTokens
+		payload.Tokens.OutputTokens += event.OutputTokens
+		payload.Tokens.ReasoningTokens += event.ReasoningTokens
+		payload.Tokens.CachedTokens += event.CachedTokens
+		payload.Tokens.CacheTokens += event.CacheTokens
+		payload.Tokens.TotalTokens += event.TotalTokens
+		if event.LatencyMS != nil {
+			payload.LatencySumMS += *event.LatencyMS
+			payload.LatencyCount++
+		}
 
 		endpoint := event.Endpoint
 		if endpoint == "" {
@@ -230,6 +263,19 @@ func BuildPayload(events []Event) Payload {
 			modelEntry = &ModelAggregate{}
 			apiEntry.Models[model] = modelEntry
 		}
+		successCount := int64(0)
+		failureCount := int64(0)
+		if outcome == OutcomeFailed {
+			failureCount = 1
+		} else if outcome != OutcomeCanceled {
+			successCount = 1
+		}
+		latencySumMS := int64(0)
+		latencyCount := int64(0)
+		if event.LatencyMS != nil {
+			latencySumMS = *event.LatencyMS
+			latencyCount = 1
+		}
 		modelEntry.Details = append(modelEntry.Details, Detail{
 			Timestamp:             event.Timestamp,
 			Source:                event.Source,
@@ -245,6 +291,11 @@ func BuildPayload(events []Event) Payload {
 			ResolvedModel:         event.ResolvedModel,
 			Failed:                event.Failed,
 			Outcome:               outcome,
+			RequestCount:          1,
+			SuccessCount:          successCount,
+			FailureCount:          failureCount,
+			LatencySumMS:          latencySumMS,
+			LatencyCount:          latencyCount,
 			Tokens: Tokens{
 				InputTokens:     event.InputTokens,
 				OutputTokens:    event.OutputTokens,
@@ -254,6 +305,10 @@ func BuildPayload(events []Event) Payload {
 				TotalTokens:     event.TotalTokens,
 			},
 		})
+	}
+	if payload.LatencyCount > 0 {
+		averageLatency := payload.LatencySumMS / payload.LatencyCount
+		payload.LatencyMS = &averageLatency
 	}
 	return payload
 }

@@ -4,6 +4,7 @@ import {
   buildApiKeyRows,
   buildApiKeyDisplayMap,
   buildProviderAliasDisplayMapForMonitoring,
+  buildMonitoringFilterFacetsFromSummary,
   buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
   type MonitoringEventRow,
@@ -43,8 +44,13 @@ const createMonitoringEventRow = (
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
   outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
+  requestCount: overrides.requestCount ?? 1,
+  successCalls: overrides.successCalls ?? (overrides.failed ? 0 : 1),
+  failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 1200,
+  latencySumMs: overrides.latencySumMs ?? overrides.latencyMs ?? 1200,
+  latencyCount: overrides.latencyCount ?? 1,
   inputTokens: overrides.inputTokens ?? 10,
   outputTokens: overrides.outputTokens ?? 5,
   reasoningTokens: overrides.reasoningTokens ?? 0,
@@ -194,6 +200,22 @@ describe('buildRangeFilteredRows', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].apiKeyHash).toBe('hash-b');
   });
+
+  it('matches text search when the derived api key hash does not match', () => {
+    const rows = buildRangeFilteredRows(
+      [
+        createMonitoringEventRow({ apiKeyHash: 'hash-a', searchText: 'kongwenpeng codex' }),
+        createMonitoringEventRow({ id: 'row-2', apiKeyHash: 'hash-b', searchText: 'other alias' }),
+      ],
+      'all',
+      null,
+      'KongWenpeng',
+      sha256Hex('KongWenpeng')
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].apiKeyHash).toBe('hash-a');
+  });
 });
 
 describe('buildMonitoringAuthMetaMap', () => {
@@ -273,5 +295,26 @@ describe('buildProviderAliasDisplayMapForMonitoring', () => {
     );
 
     expect(map.get('auth:auth-openai-entry')?.alias).toBe('Router Alias');
+  });
+});
+
+describe('buildMonitoringFilterFacetsFromSummary', () => {
+  it('reads summary facets without requiring detail rows', () => {
+    const facets = buildMonitoringFilterFacetsFromSummary({
+      apis: {},
+      facets: {
+        providers: ['codex'],
+        accounts: [{ value: 'alice@example.com', label: 'Alice' }],
+        models: ['gpt-5'],
+        channels: ['codex'],
+        api_keys: [{ value: 'hash-a', label: 'Team A' }],
+      },
+    });
+
+    expect(facets.providers).toEqual(['codex']);
+    expect(facets.accounts).toEqual([{ value: 'alice@example.com', label: 'Alice' }]);
+    expect(facets.models).toEqual(['gpt-5']);
+    expect(facets.channels).toEqual(['codex']);
+    expect(facets.apiKeys).toEqual([{ value: 'hash-a', label: 'Team A' }]);
   });
 });
