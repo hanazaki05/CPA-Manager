@@ -1811,7 +1811,7 @@ func buildBreakdownPageItems(kind UsageBreakdownKind, groups []*usageBreakdownGr
 			case UsageBreakdownAccounts:
 				if item.Account == "" {
 					item.Account = firstNonEmpty(detail.Detail.AccountSnapshot, detail.Detail.AuthLabelSnapshot, detail.Detail.Source, detail.Detail.AuthIndex, group.Key)
-					item.AccountLabel = firstNonEmpty(detail.Detail.AccountSnapshot, detail.Detail.AuthLabelSnapshot, item.Account)
+					item.AccountLabel = firstNonEmpty(detail.Detail.AuthLabelSnapshot, detail.Detail.AccountSnapshot, item.Account)
 				}
 			case UsageBreakdownAPIKeys:
 				if item.APIKeyHash == "" && detail.Detail.APIKeyHash != "" {

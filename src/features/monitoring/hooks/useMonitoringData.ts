@@ -395,6 +395,34 @@ const resolveProviderAliasDisplay = (
   return undefined;
 };
 
+const resolveProviderAliasForPageItem = (
+  item: RecordLike,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
+) => {
+  const authIndices = normalizeFacetStrings(item.auth_indices ?? item.authIndices);
+  const sourceCandidates = normalizeFacetStrings(
+    item.source_labels ?? item.sourceLabels ?? item.channels
+  );
+  const account = readString(item.account ?? item.key ?? item.id);
+
+  for (const authIndex of authIndices) {
+    const display = resolveProviderAliasDisplay(providerAliasDisplayMap, '', authIndex, '');
+    if (display) return display;
+  }
+
+  for (const source of [account, ...sourceCandidates]) {
+    const display = resolveProviderAliasDisplay(
+      providerAliasDisplayMap,
+      source,
+      '',
+      source.startsWith('provider:') ? source : `source:${source}`
+    );
+    if (display) return display;
+  }
+
+  return undefined;
+};
+
 const shouldIncludeInStats = (
   row: Pick<MonitoringEventRow, 'failed' | 'outcome' | 'inputTokens' | 'outputTokens'>
 ) => row.outcome !== 'canceled' && (row.failed || row.inputTokens > 0 || row.outputTokens > 0);
@@ -2217,10 +2245,12 @@ const buildModelSpendRowsFromPageItems = (
 
 const buildAccountRowsFromPageItems = (
   items: RecordLike[],
-  modelPriceIndex: ModelPriceIndex
+  modelPriceIndex: ModelPriceIndex,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
 ): MonitoringAccountRow[] =>
   items.map((item) => {
     const account = readString(item.account ?? item.key ?? item.id) || '-';
+    const providerAliasDisplay = resolveProviderAliasForPageItem(item, providerAliasDisplayMap);
     const channels = normalizeFacetStrings(item.channels);
     const models = buildModelSpendRowsFromPageItems(item.models, modelPriceIndex);
     const totalCalls = readPageNumber(item, 'total_requests', 'totalRequests');
@@ -2238,7 +2268,9 @@ const buildAccountRowsFromPageItems = (
       id: account,
       account,
       displayAccount: resolveAccountDisplayName(
-        readString(item.account_label ?? item.accountLabel) || account,
+        providerAliasDisplay?.alias ||
+          readString(item.account_label ?? item.accountLabel) ||
+          account,
         channels
       ),
       accountMasked: maskEmailLike(account),
@@ -2260,6 +2292,8 @@ const buildAccountRowsFromPageItems = (
       models,
     };
   });
+
+export const buildAccountRowsFromPageItemsForMonitoring = buildAccountRowsFromPageItems;
 
 const buildApiKeyRowsFromPageItems = (
   items: RecordLike[],
@@ -2608,7 +2642,9 @@ export function useMonitoringData({
 
   const accountPageRows = useMemo(() => {
     const items = readPageItems(usagePages?.accounts);
-    if (items.length > 0) return buildAccountRowsFromPageItems(items, modelPriceIndex);
+    if (items.length > 0) {
+      return buildAccountRowsFromPageItems(items, modelPriceIndex, providerAliasDisplayMap);
+    }
     const pageUsage = usagePages?.accounts?.usage;
     if (!pageUsage) return null;
     const rows = buildRangeFilteredRows(
@@ -2623,6 +2659,7 @@ export function useMonitoringData({
     buildRowsForUsage,
     customTimeRange,
     modelPriceIndex,
+    providerAliasDisplayMap,
     searchApiKeyHash,
     searchQuery,
     timeRange,

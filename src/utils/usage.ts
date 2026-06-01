@@ -226,6 +226,7 @@ export function buildCandidateUsageSourceIds(input: {
     const legacyMasked = `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
     result.push(normalizeUsageSourceId(apiKey));
     result.push(`${USAGE_SOURCE_PREFIX_MASKED}${masked}`);
+    result.push(`${USAGE_SOURCE_PREFIX_MASKED}${legacyMasked}`);
     result.push(`${USAGE_SOURCE_PREFIX_TEXT}${masked}`);
     result.push(normalizeUsageSourceId(`${USAGE_SOURCE_PREFIX_MASKED}${legacyMasked}`));
   }

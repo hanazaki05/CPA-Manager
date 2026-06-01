@@ -4,6 +4,7 @@ import {
   buildApiKeyRows,
   buildApiKeyDisplayMap,
   buildProviderAliasDisplayMapForMonitoring,
+  buildAccountRowsFromPageItemsForMonitoring,
   buildMonitoringFilterFacetsFromSummary,
   buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
@@ -12,6 +13,7 @@ import {
 import { sha256Hex } from '@/utils/apiKeyHash';
 import type { AuthFileItem } from '@/types';
 import { buildProviderAliasKey } from '@/utils/providerAliases';
+import { buildModelPriceIndex } from '@/utils/usage';
 
 const createMonitoringEventRow = (
   overrides: Partial<MonitoringEventRow> = {}
@@ -45,7 +47,8 @@ const createMonitoringEventRow = (
   failed: overrides.failed ?? false,
   outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   requestCount: overrides.requestCount ?? 1,
-  successCalls: overrides.successCalls ?? (overrides.failed ? 0 : 1),
+  successCalls:
+    overrides.successCalls ?? (overrides.failed || overrides.outcome === 'canceled' ? 0 : 1),
   failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 1200,
@@ -181,6 +184,45 @@ describe('buildApiKeyRows', () => {
     expect(rows[0].successCalls).toBe(1);
     expect(rows[0].failureCalls).toBe(0);
     expect(rows[0].successRate).toBe(1);
+  });
+});
+
+describe('buildAccountRowsFromPageItemsForMonitoring', () => {
+  it('uses provider aliases for server-paginated account rows', () => {
+    const providerConfig = {
+      apiKey: 'sk-provider-alias-test-key',
+      prefix: 'team-codex',
+      baseUrl: 'https://example.test/v1',
+      authIndex: 'auth-provider-1',
+    };
+    const providerKey = buildProviderAliasKey('codex', providerConfig, 0);
+    const providerAliasMap = buildProviderAliasDisplayMapForMonitoring(
+      { codexApiKeys: [providerConfig] },
+      [{ provider: 'codex', providerKey, alias: 'Fast Pool', updatedAtMs: 1 }]
+    );
+
+    const rows = buildAccountRowsFromPageItemsForMonitoring(
+      [
+        {
+          id: 'm:sk-...-key',
+          key: 'm:sk-...-key',
+          account: 'm:sk-...-key',
+          account_label: 'm:sk-...-key',
+          auth_indices: ['auth-provider-1'],
+          channels: ['codex'],
+          total_requests: 3,
+          success_count: 3,
+          failure_count: 0,
+          models: [],
+        },
+      ],
+      buildModelPriceIndex({}),
+      providerAliasMap
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].account).toBe('m:sk-...-key');
+    expect(rows[0].displayAccount).toBe('Fast Pool');
   });
 });
 
