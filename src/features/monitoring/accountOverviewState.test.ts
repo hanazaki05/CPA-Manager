@@ -20,6 +20,7 @@ import {
   normalizeAccountOverviewUiState,
   normalizeApiKeySortState,
   normalizeAccountSortState,
+  normalizeMonitoringFilters,
   sortApiKeyRows,
   sortAccountRows,
 } from './accountOverviewState';
@@ -99,6 +100,7 @@ const createEventRow = (overrides: Partial<MonitoringEventRow> = {}): Monitoring
   channelHost: overrides.channelHost ?? 'localhost',
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
+  outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   requestCount: overrides.requestCount ?? 1,
   successCalls: overrides.successCalls ?? (overrides.failed ? 0 : 1),
   failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),

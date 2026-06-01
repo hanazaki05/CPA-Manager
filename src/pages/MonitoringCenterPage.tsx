@@ -2133,9 +2133,17 @@ export function MonitoringCenterPage() {
       loadUsage(buildUsageQuery(Date.now())),
       loadModelPrices(),
       loadApiKeyAliases(),
+      loadProviderAliases(),
       refreshMeta(false),
     ]);
-  }, [buildUsageQuery, loadApiKeyAliases, loadModelPrices, loadUsage, refreshMeta]);
+  }, [
+    buildUsageQuery,
+    loadApiKeyAliases,
+    loadModelPrices,
+    loadProviderAliases,
+    loadUsage,
+    refreshMeta,
+  ]);
 
   const setCurrentAccountPage = useCallback(
     (page: number) => {

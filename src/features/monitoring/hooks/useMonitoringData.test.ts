@@ -3,6 +3,8 @@ import {
   buildAccountRows,
   buildApiKeyRows,
   buildApiKeyDisplayMap,
+  buildProviderAliasDisplayMapForMonitoring,
+  buildAccountRowsFromPageItemsForMonitoring,
   buildMonitoringFilterFacetsFromSummary,
   buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
@@ -11,6 +13,7 @@ import {
 import { sha256Hex } from '@/utils/apiKeyHash';
 import type { AuthFileItem } from '@/types';
 import { buildProviderAliasKey } from '@/utils/providerAliases';
+import { buildModelPriceIndex } from '@/utils/usage';
 
 const createMonitoringEventRow = (
   overrides: Partial<MonitoringEventRow> = {}
@@ -42,8 +45,10 @@ const createMonitoringEventRow = (
   channelHost: overrides.channelHost ?? 'example.com',
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
+  outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   requestCount: overrides.requestCount ?? 1,
-  successCalls: overrides.successCalls ?? (overrides.failed ? 0 : 1),
+  successCalls:
+    overrides.successCalls ?? (overrides.failed || overrides.outcome === 'canceled' ? 0 : 1),
   failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 1200,
@@ -182,6 +187,45 @@ describe('buildApiKeyRows', () => {
   });
 });
 
+describe('buildAccountRowsFromPageItemsForMonitoring', () => {
+  it('uses provider aliases for server-paginated account rows', () => {
+    const providerConfig = {
+      apiKey: 'sk-provider-alias-test-key',
+      prefix: 'team-codex',
+      baseUrl: 'https://example.test/v1',
+      authIndex: 'auth-provider-1',
+    };
+    const providerKey = buildProviderAliasKey('codex', providerConfig, 0);
+    const providerAliasMap = buildProviderAliasDisplayMapForMonitoring(
+      { codexApiKeys: [providerConfig] },
+      [{ provider: 'codex', providerKey, alias: 'Fast Pool', updatedAtMs: 1 }]
+    );
+
+    const rows = buildAccountRowsFromPageItemsForMonitoring(
+      [
+        {
+          id: 'm:sk-...-key',
+          key: 'm:sk-...-key',
+          account: 'm:sk-...-key',
+          account_label: 'm:sk-...-key',
+          auth_indices: ['auth-provider-1'],
+          channels: ['codex'],
+          total_requests: 3,
+          success_count: 3,
+          failure_count: 0,
+          models: [],
+        },
+      ],
+      buildModelPriceIndex({}),
+      providerAliasMap
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].account).toBe('m:sk-...-key');
+    expect(rows[0].displayAccount).toBe('Fast Pool');
+  });
+});
+
 describe('buildRangeFilteredRows', () => {
   it('applies api key hash filtering even when the search query is empty', () => {
     const rows = buildRangeFilteredRows(
@@ -255,6 +299,44 @@ describe('buildApiKeyDisplayMap', () => {
 
     expect(map.get(apiKeyHash)?.label).toContain('*');
     expect(map.get(apiKeyHash)?.label).not.toContain('ghp_1234567890abcdef');
+  });
+});
+
+describe('buildProviderAliasDisplayMapForMonitoring', () => {
+  it('maps saved provider aliases by auth index and usage source candidates', () => {
+    const providerConfig = {
+      apiKey: 'sk-provider-alias-test-key',
+      prefix: 'team-codex',
+      baseUrl: 'https://example.test/v1',
+      authIndex: 'auth-provider-1',
+    };
+    const providerKey = buildProviderAliasKey('codex', providerConfig, 0);
+    const map = buildProviderAliasDisplayMapForMonitoring(
+      { codexApiKeys: [providerConfig] },
+      [{ provider: 'codex', providerKey, alias: 'Fast Pool', updatedAtMs: 1 }]
+    );
+
+    expect(map.get('auth:auth-provider-1')?.alias).toBe('Fast Pool');
+    expect(map.get('source:t:team-codex')?.alias).toBe('Fast Pool');
+    expect(map.get('source:m:sk******ey')?.alias).toBe('Fast Pool');
+    expect(map.get('source:k:686cd0dfeedcc90f')?.alias).toBe('Fast Pool');
+  });
+
+  it('uses OpenAI entry auth indices when the alias was saved against the provider config', () => {
+    const providerConfig = {
+      name: 'openai-router',
+      alias: 'OpenAI Router',
+      prefix: 'router',
+      baseUrl: 'https://openai-compatible.test/v1',
+      apiKeyEntries: [{ apiKey: 'sk-openai-entry-key', authIndex: 'auth-openai-entry' }],
+    };
+    const providerKey = buildProviderAliasKey('openai', providerConfig, 0);
+    const map = buildProviderAliasDisplayMapForMonitoring(
+      { openaiCompatibility: [providerConfig] },
+      [{ provider: 'openai', providerKey, alias: 'Router Alias', updatedAtMs: 1 }]
+    );
+
+    expect(map.get('auth:auth-openai-entry')?.alias).toBe('Router Alias');
   });
 });
 

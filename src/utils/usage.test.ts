@@ -102,11 +102,12 @@ describe('usage detail collection', () => {
 
 describe('buildCandidateUsageSourceIds', () => {
   it('includes legacy masked monitoring source candidates for historical usage rows', () => {
+    const apiKey = 'sk-REWNJh11pmHXt5j3gzG7zidBsDy79uovY2yQfrMwmIJSBEWm';
     expect(
       buildCandidateUsageSourceIds({
-        apiKey: 'sk-REWNJh11pmHXt5j3gzG7zidBsDy79uovY2yQfrMwmIJSBEWm',
+        apiKey,
       })
-    ).toContain('m:m:******Wm');
+    ).toContain('m:sk-R...BEWm');
   });
 });
 

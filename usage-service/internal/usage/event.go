@@ -71,6 +71,7 @@ type Detail struct {
 	ResolvedModel         string `json:"resolved_model,omitempty"`
 	Tokens                Tokens `json:"tokens"`
 	Failed                bool   `json:"failed"`
+	Outcome               string `json:"outcome,omitempty"`
 	RequestCount          int64  `json:"request_count"`
 	SuccessCount          int64  `json:"success_count"`
 	FailureCount          int64  `json:"failure_count"`
@@ -262,6 +263,19 @@ func BuildPayload(events []Event) Payload {
 			modelEntry = &ModelAggregate{}
 			apiEntry.Models[model] = modelEntry
 		}
+		successCount := int64(0)
+		failureCount := int64(0)
+		if outcome == OutcomeFailed {
+			failureCount = 1
+		} else if outcome != OutcomeCanceled {
+			successCount = 1
+		}
+		latencySumMS := int64(0)
+		latencyCount := int64(0)
+		if event.LatencyMS != nil {
+			latencySumMS = *event.LatencyMS
+			latencyCount = 1
+		}
 		modelEntry.Details = append(modelEntry.Details, Detail{
 			Timestamp:             event.Timestamp,
 			Source:                event.Source,
@@ -277,6 +291,11 @@ func BuildPayload(events []Event) Payload {
 			ResolvedModel:         event.ResolvedModel,
 			Failed:                event.Failed,
 			Outcome:               outcome,
+			RequestCount:          1,
+			SuccessCount:          successCount,
+			FailureCount:          failureCount,
+			LatencySumMS:          latencySumMS,
+			LatencyCount:          latencyCount,
 			Tokens: Tokens{
 				InputTokens:     event.InputTokens,
 				OutputTokens:    event.OutputTokens,

@@ -103,8 +103,10 @@ const createMonitoringEventRow = (
   channelHost: overrides.channelHost ?? 'example.com',
   channelDisabled: overrides.channelDisabled ?? false,
   failed: overrides.failed ?? false,
+  outcome: overrides.outcome ?? (overrides.failed ? 'failed' : 'success'),
   requestCount: overrides.requestCount ?? 1,
-  successCalls: overrides.successCalls ?? (overrides.failed ? 0 : 1),
+  successCalls:
+    overrides.successCalls ?? (overrides.failed || overrides.outcome === 'canceled' ? 0 : 1),
   failureCalls: overrides.failureCalls ?? (overrides.failed ? 1 : 0),
   statsIncluded: overrides.statsIncluded ?? true,
   latencyMs: overrides.latencyMs ?? 120,

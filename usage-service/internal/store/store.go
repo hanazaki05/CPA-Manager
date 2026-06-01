@@ -1149,11 +1149,15 @@ func (filter UsageSummaryFilter) whereClause() (string, []any) {
 		clauses = append(clauses, "lower(coalesce(api_key_hash, '')) = ?")
 		args = append(args, strings.ToLower(filter.APIKeyHash))
 	}
-	if filter.Status == "success" {
-		clauses = append(clauses, "failed = 0")
+	canceledClause := `(coalesce(raw_json, '') like '%"outcome":"canceled"%' or coalesce(raw_json, '') like '%"result":"canceled"%' or coalesce(raw_json, '') like '%"result":"cancelled"%')`
+	if filter.Status == usage.OutcomeSuccess {
+		clauses = append(clauses, "failed = 0 and not "+canceledClause)
 	}
-	if filter.Status == "failed" {
+	if filter.Status == usage.OutcomeFailed {
 		clauses = append(clauses, "failed != 0")
+	}
+	if filter.Status == usage.OutcomeCanceled {
+		clauses = append(clauses, canceledClause)
 	}
 	if filter.Account != "" {
 		value := strings.ToLower(filter.Account)
@@ -1807,7 +1811,7 @@ func buildBreakdownPageItems(kind UsageBreakdownKind, groups []*usageBreakdownGr
 			case UsageBreakdownAccounts:
 				if item.Account == "" {
 					item.Account = firstNonEmpty(detail.Detail.AccountSnapshot, detail.Detail.AuthLabelSnapshot, detail.Detail.Source, detail.Detail.AuthIndex, group.Key)
-					item.AccountLabel = firstNonEmpty(detail.Detail.AccountSnapshot, detail.Detail.AuthLabelSnapshot, item.Account)
+					item.AccountLabel = firstNonEmpty(detail.Detail.AuthLabelSnapshot, detail.Detail.AccountSnapshot, item.Account)
 				}
 			case UsageBreakdownAPIKeys:
 				if item.APIKeyHash == "" && detail.Detail.APIKeyHash != "" {

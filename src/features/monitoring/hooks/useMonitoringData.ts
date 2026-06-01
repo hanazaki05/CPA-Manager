@@ -395,6 +395,34 @@ const resolveProviderAliasDisplay = (
   return undefined;
 };
 
+const resolveProviderAliasForPageItem = (
+  item: RecordLike,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
+) => {
+  const authIndices = normalizeFacetStrings(item.auth_indices ?? item.authIndices);
+  const sourceCandidates = normalizeFacetStrings(
+    item.source_labels ?? item.sourceLabels ?? item.channels
+  );
+  const account = readString(item.account ?? item.key ?? item.id);
+
+  for (const authIndex of authIndices) {
+    const display = resolveProviderAliasDisplay(providerAliasDisplayMap, '', authIndex, '');
+    if (display) return display;
+  }
+
+  for (const source of [account, ...sourceCandidates]) {
+    const display = resolveProviderAliasDisplay(
+      providerAliasDisplayMap,
+      source,
+      '',
+      source.startsWith('provider:') ? source : `source:${source}`
+    );
+    if (display) return display;
+  }
+
+  return undefined;
+};
+
 const shouldIncludeInStats = (
   row: Pick<MonitoringEventRow, 'failed' | 'outcome' | 'inputTokens' | 'outputTokens'>
 ) => row.outcome !== 'canceled' && (row.failed || row.inputTokens > 0 || row.outputTokens > 0);
@@ -579,6 +607,7 @@ export type MonitoringEventRow = {
   channelHost: string;
   channelDisabled: boolean;
   failed: boolean;
+  outcome: UsageOutcome;
   requestCount: number;
   successCalls: number;
   failureCalls: number;
@@ -1035,7 +1064,7 @@ const buildRecentPattern = (rows: MonitoringEventRow[], limit = 10) =>
 export const buildMonitoringSummary = (rows: MonitoringEventRow[]): MonitoringSummary => {
   const totalCalls = rows.reduce((sum, row) => sum + row.requestCount, 0);
   const failureCalls = rows.reduce((sum, row) => sum + row.failureCalls, 0);
-  const successCalls = Math.max(totalCalls - failureCalls, 0);
+  const successCalls = rows.reduce((sum, row) => sum + row.successCalls, 0);
   const inputTokens = rows.reduce((sum, row) => sum + row.inputTokens, 0);
   const outputTokens = rows.reduce((sum, row) => sum + row.outputTokens, 0);
   const reasoningTokens = rows.reduce((sum, row) => sum + row.reasoningTokens, 0);
@@ -2058,7 +2087,14 @@ const buildEventRows = (
             ? detail.latency_ms
             : 0;
       const totalCost = calculateCost(detail, modelPriceIndex);
-      const statsIncluded = detail.failed === true || inputTokens > 0 || outputTokens > 0;
+      const outcome = detail.outcome || (detail.failed === true ? 'failed' : 'success');
+      const failed = outcome === 'failed';
+      const statsIncluded = shouldIncludeInStats({
+        failed,
+        outcome,
+        inputTokens,
+        outputTokens,
+      });
       const serverStreamKey = readString(detail.__streamKey);
       const serverStreamTotalCalls = Math.max(Number(detail.__streamTotalRequests) || 0, 0);
       const serverStreamSuccessCalls = Math.max(Number(detail.__streamSuccessCount) || 0, 0);
@@ -2112,7 +2148,8 @@ const buildEventRows = (
         channel: channelLabel,
         channelHost: channelMeta?.host || '-',
         channelDisabled: channelMeta?.disabled || false,
-        failed: detail.failed === true,
+        failed,
+        outcome,
         requestCount,
         successCalls,
         failureCalls,
@@ -2208,10 +2245,12 @@ const buildModelSpendRowsFromPageItems = (
 
 const buildAccountRowsFromPageItems = (
   items: RecordLike[],
-  modelPriceIndex: ModelPriceIndex
+  modelPriceIndex: ModelPriceIndex,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
 ): MonitoringAccountRow[] =>
   items.map((item) => {
     const account = readString(item.account ?? item.key ?? item.id) || '-';
+    const providerAliasDisplay = resolveProviderAliasForPageItem(item, providerAliasDisplayMap);
     const channels = normalizeFacetStrings(item.channels);
     const models = buildModelSpendRowsFromPageItems(item.models, modelPriceIndex);
     const totalCalls = readPageNumber(item, 'total_requests', 'totalRequests');
@@ -2229,7 +2268,9 @@ const buildAccountRowsFromPageItems = (
       id: account,
       account,
       displayAccount: resolveAccountDisplayName(
-        readString(item.account_label ?? item.accountLabel) || account,
+        providerAliasDisplay?.alias ||
+          readString(item.account_label ?? item.accountLabel) ||
+          account,
         channels
       ),
       accountMasked: maskEmailLike(account),
@@ -2251,6 +2292,8 @@ const buildAccountRowsFromPageItems = (
       models,
     };
   });
+
+export const buildAccountRowsFromPageItemsForMonitoring = buildAccountRowsFromPageItems;
 
 const buildApiKeyRowsFromPageItems = (
   items: RecordLike[],
@@ -2303,7 +2346,8 @@ const buildRealtimeRowsFromPageItems = (
   sourceInfoMap: ReturnType<typeof buildSourceInfoMap>,
   channelByAuthIndex: Map<string, MonitoringChannelMeta>,
   modelPriceIndex: ModelPriceIndex,
-  apiKeyDisplayMap: Map<string, ApiKeyDisplayInfo>
+  apiKeyDisplayMap: Map<string, ApiKeyDisplayInfo>,
+  providerAliasDisplayMap: Map<string, ProviderAliasDisplayInfo>
 ) => {
   const details = items.map((item) => {
     const endpoint = readString(item.endpoint) || '-';
@@ -2343,6 +2387,7 @@ const buildRealtimeRowsFromPageItems = (
         total_tokens: readPageNumber(item, 'total_tokens', 'totalTokens'),
       },
       failed: item.failed === true,
+      outcome: readString(item.outcome) as UsageOutcome,
       request_count: 1,
       success_count: item.failed === true ? 0 : 1,
       failure_count: item.failed === true ? 1 : 0,
@@ -2382,7 +2427,8 @@ const buildRealtimeRowsFromPageItems = (
     sourceInfoMap,
     channelByAuthIndex,
     modelPriceIndex,
-    apiKeyDisplayMap
+    apiKeyDisplayMap,
+    providerAliasDisplayMap
   ).sort((left, right) => right.timestampMs - left.timestampMs);
 };
 
@@ -2554,6 +2600,10 @@ export function useMonitoringData({
     return buildApiKeyDisplayMap(config?.apiKeys || [], apiKeyAliases || []);
   }, [apiKeyAliases, config?.apiKeys]);
 
+  const providerAliasDisplayMap = useMemo(() => {
+    return buildProviderAliasDisplayMap(config, providerAliases || []);
+  }, [config, providerAliases]);
+
   const summaryFilterFacets = useMemo(
     () => buildMonitoringFilterFacetsFromSummary(usage, apiKeyDisplayMap),
     [apiKeyDisplayMap, usage]
@@ -2571,10 +2621,19 @@ export function useMonitoringData({
         sourceInfoMap,
         channelByAuthIndex,
         modelPriceIndex,
-        apiKeyDisplayMap
+        apiKeyDisplayMap,
+        providerAliasDisplayMap
       ).sort((left, right) => right.timestampMs - left.timestampMs);
     },
-    [apiKeyDisplayMap, authFileMap, authMetaMap, channelByAuthIndex, modelPriceIndex, sourceInfoMap]
+    [
+      apiKeyDisplayMap,
+      authFileMap,
+      authMetaMap,
+      channelByAuthIndex,
+      modelPriceIndex,
+      providerAliasDisplayMap,
+      sourceInfoMap,
+    ]
   );
 
   const allRows = useMemo(() => {
@@ -2583,7 +2642,9 @@ export function useMonitoringData({
 
   const accountPageRows = useMemo(() => {
     const items = readPageItems(usagePages?.accounts);
-    if (items.length > 0) return buildAccountRowsFromPageItems(items, modelPriceIndex);
+    if (items.length > 0) {
+      return buildAccountRowsFromPageItems(items, modelPriceIndex, providerAliasDisplayMap);
+    }
     const pageUsage = usagePages?.accounts?.usage;
     if (!pageUsage) return null;
     const rows = buildRangeFilteredRows(
@@ -2598,6 +2659,7 @@ export function useMonitoringData({
     buildRowsForUsage,
     customTimeRange,
     modelPriceIndex,
+    providerAliasDisplayMap,
     searchApiKeyHash,
     searchQuery,
     timeRange,
@@ -2640,7 +2702,8 @@ export function useMonitoringData({
         sourceInfoMap,
         channelByAuthIndex,
         modelPriceIndex,
-        apiKeyDisplayMap
+        apiKeyDisplayMap,
+        providerAliasDisplayMap
       );
     }
     const pageUsage = usagePages?.realtime?.usage;
@@ -2660,6 +2723,7 @@ export function useMonitoringData({
     channelByAuthIndex,
     customTimeRange,
     modelPriceIndex,
+    providerAliasDisplayMap,
     searchApiKeyHash,
     searchQuery,
     sourceInfoMap,

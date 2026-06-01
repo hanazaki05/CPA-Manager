@@ -7,6 +7,8 @@ import {
   type ApiKeyAliasesResponse,
   type ModelPricesResponse,
   type ModelPriceSyncResponse,
+  type ProviderAlias,
+  type ProviderAliasesResponse,
   type UsagePageQuery,
   type UsagePageResponse,
   type UsageQuery,
@@ -14,7 +16,7 @@ import {
   type UsageImportResponse,
 } from '@/services/api/usageService';
 import { useAuthStore, useUsageServiceStore } from '@/stores';
-import { detectApiBaseFromLocation } from '@/utils/connection';
+import { buildUsageServiceBaseCandidates, detectApiBaseFromLocation } from '@/utils/connection';
 import {
   clearModelPrices,
   loadModelPrices as loadStoredModelPrices,
@@ -369,6 +371,19 @@ export function useUsageData(
     }
   }, [getApiKeyAliasesFromApi]);
 
+  const loadProviderAliases = useCallback(async () => {
+    const requestId = providerAliasRequestIdRef.current + 1;
+    providerAliasRequestIdRef.current = requestId;
+    try {
+      const response = await getProviderAliasesFromApi();
+      if (providerAliasRequestIdRef.current !== requestId) return;
+      setProviderAliases(Array.isArray(response.items) ? response.items : []);
+    } catch {
+      if (providerAliasRequestIdRef.current !== requestId) return;
+      setProviderAliases([]);
+    }
+  }, [getProviderAliasesFromApi]);
+
   const loadUsage = useCallback(
     async (queryOverride?: UsageQuery) => {
       const requestId = requestIdRef.current + 1;
@@ -417,7 +432,7 @@ export function useUsageData(
     void loadApiKeyAliases();
     void loadProviderAliases();
     void loadUsage();
-  }, [loadApiKeyAliases, loadModelPrices, loadUsage]);
+  }, [loadApiKeyAliases, loadModelPrices, loadProviderAliases, loadUsage]);
 
   const setModelPrices = useCallback(
     async (prices: Record<string, ModelPrice>) => {

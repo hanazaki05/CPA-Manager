@@ -41,7 +41,7 @@ export interface UsageQuery {
   model?: string;
   channel?: string;
   apiKeyHash?: string;
-  status?: 'success' | 'failed';
+  status?: 'success' | 'failed' | 'canceled';
   search?: string;
   searchApiKeyHash?: string;
 }

@@ -1047,7 +1047,10 @@ func parseUsageSummaryFilter(r *http.Request) (store.UsageSummaryFilter, error) 
 	filter.Search = strings.TrimSpace(query.Get("search"))
 	filter.SearchAPIKeyHash = strings.TrimSpace(query.Get("search_api_key_hash"))
 	filter.Status = strings.TrimSpace(query.Get("status"))
-	if filter.Status != "" && filter.Status != "success" && filter.Status != "failed" {
+	if filter.Status != "" &&
+		filter.Status != usage.OutcomeSuccess &&
+		filter.Status != usage.OutcomeFailed &&
+		filter.Status != usage.OutcomeCanceled {
 		return filter, fmt.Errorf("invalid status")
 	}
 	return filter, nil
