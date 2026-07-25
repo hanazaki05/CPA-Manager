@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import {
+  IconExternalLink,
   IconSidebarAuthFiles,
   IconSidebarConfig,
   IconSidebarDashboard,
@@ -22,6 +23,7 @@ import {
   IconSidebarProviders,
   IconSidebarQuota,
   IconSidebarSystem,
+  IconX,
 } from '@/components/ui/icons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import {
@@ -49,6 +51,17 @@ const sidebarIcons: Record<string, ReactNode> = {
   logs: <IconSidebarLogs size={18} />,
   system: <IconSidebarSystem size={18} />,
 };
+
+const CPA_MANAGER_PLUS_BASE_URL = 'https://seakee.github.io/CPA-Manager-Plus';
+const CPA_MANAGER_PLUS_SITE_URL = `${CPA_MANAGER_PLUS_BASE_URL}/`;
+
+const getCpampDocsBaseUrl = (language: string) =>
+  language === 'zh-CN' || language === 'zh-TW'
+    ? `${CPA_MANAGER_PLUS_BASE_URL}/docs`
+    : `${CPA_MANAGER_PLUS_BASE_URL}/docs/en`;
+
+const getCpampDocUrl = (language: string, path: string) =>
+  `${getCpampDocsBaseUrl(language)}/${path}.html`;
 
 // Header action icons - smaller size for header buttons
 const headerIconProps: SVGProps<SVGSVGElement> = {
@@ -232,6 +245,10 @@ export function MainLayout() {
     'mainLayout.sidebarCollapsed',
     false
   );
+  const [migrationPromptDismissed, setMigrationPromptDismissed] = useLocalStorage(
+    'mainLayout.cpaManagerPlusMigrationPromptDismissed',
+    false
+  );
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -243,6 +260,24 @@ export function MainLayout() {
   const abbrBrandName = t('title.abbr');
   const isLogsPage = location.pathname.startsWith('/logs');
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
+  const migrationGuideUrl = getCpampDocUrl(language, 'migration/from-cpa-manager');
+  const migrationPromptLinks = [
+    {
+      key: 'demo',
+      href: CPA_MANAGER_PLUS_SITE_URL,
+      label: t('migration_prompt.links.demo'),
+    },
+    {
+      key: 'quick_start',
+      href: getCpampDocUrl(language, 'guide/getting-started'),
+      label: t('migration_prompt.links.quick_start'),
+    },
+    {
+      key: 'backup',
+      href: getCpampDocUrl(language, 'operations/backup'),
+      label: t('migration_prompt.links.backup'),
+    },
+  ];
 
   // 将顶部悬浮控制区高度写入 CSS 变量，供移动端粘性元素和浮层避让。
   useLayoutEffect(() => {
@@ -679,6 +714,51 @@ export function MainLayout() {
 
         <div className={`content${isLogsPage ? ' content-logs' : ''}`} ref={contentRef}>
           <main className={`main-content${isLogsPage ? ' main-content-logs' : ''}`}>
+            {!migrationPromptDismissed && (
+              <section className="migration-prompt" aria-label={t('migration_prompt.label')}>
+                <div className="migration-prompt__content">
+                  <div className="migration-prompt__title">{t('migration_prompt.title')}</div>
+                  <div className="migration-prompt__body">{t('migration_prompt.body')}</div>
+                  <div
+                    className="migration-prompt__links"
+                    aria-label={t('migration_prompt.links_label')}
+                  >
+                    {migrationPromptLinks.map((link) => (
+                      <a
+                        key={link.key}
+                        className="migration-prompt__secondary-link"
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <span>{link.label}</span>
+                        <IconExternalLink size={12} />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+                <div className="migration-prompt__actions">
+                  <a
+                    className="migration-prompt__link"
+                    href={migrationGuideUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span>{t('migration_prompt.action')}</span>
+                    <IconExternalLink size={14} />
+                  </a>
+                  <button
+                    type="button"
+                    className="migration-prompt__dismiss"
+                    onClick={() => setMigrationPromptDismissed(true)}
+                    title={t('migration_prompt.dismiss')}
+                    aria-label={t('migration_prompt.dismiss')}
+                  >
+                    <IconX size={16} />
+                  </button>
+                </div>
+              </section>
+            )}
             <PageTransition
               render={(location) => <MainRoutes location={location} />}
               getRouteOrder={getRouteOrder}

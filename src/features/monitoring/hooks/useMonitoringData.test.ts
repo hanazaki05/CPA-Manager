@@ -8,6 +8,7 @@ import {
   buildMonitoringFilterFacetsFromSummary,
   buildRangeFilteredRows,
   buildMonitoringAuthMetaMap,
+  getRangeBounds,
   type MonitoringEventRow,
 } from './useMonitoringData';
 import { sha256Hex } from '@/utils/apiKeyHash';
@@ -62,6 +63,18 @@ const createMonitoringEventRow = (
   totalCost: overrides.totalCost ?? 0.12,
   taskKey: overrides.taskKey ?? 'task-1',
   searchText: overrides.searchText ?? 'amount myth resend',
+});
+
+describe('getRangeBounds', () => {
+  it('returns the previous local day for yesterday', () => {
+    const nowMs = new Date(2026, 4, 9, 12, 34, 56, 789).getTime();
+    const bounds = getRangeBounds('yesterday', nowMs);
+
+    expect(bounds).toEqual({
+      startMs: new Date(2026, 4, 8, 0, 0, 0, 0).getTime(),
+      endMs: new Date(2026, 4, 9, 0, 0, 0, 0).getTime(),
+    });
+  });
 });
 
 describe('buildAccountRows', () => {
