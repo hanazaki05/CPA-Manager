@@ -9,7 +9,7 @@ import type { ApiKeyEntry, OpenAIProviderConfig, ProviderKeyConfig } from '@/typ
 import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
 import { sha256Hex } from '@/utils/apiKeyHash';
 import { maskApiKey, maskSensitiveText } from '@/utils/format';
-import { buildProviderAliasKey, type AliasProviderType } from '@/utils/providerAliases';
+import { buildProviderAliasLookupKeys, type AliasProviderType } from '@/utils/providerAliases';
 import { buildLegacyAuthIndexAliases } from '../legacyAuthIndexAliases';
 import {
   buildModelPriceIndex,
@@ -273,13 +273,16 @@ const providerAliasKeyCandidates = (
   provider: AliasProviderType,
   config: ProviderKeyConfig | OpenAIProviderConfig,
   index: number,
-  authIndices: string[]
+  authIndices: string[],
+  legacyIndexLimit: number
 ) => {
   const candidates = new Set<string>();
   const addCandidate = (authIndex?: string) => {
-    candidates.add(
-      `${provider}:${buildProviderAliasKey(provider, { ...config, authIndex }, index)}`
-    );
+    buildProviderAliasLookupKeys(provider, { ...config, authIndex }, index, {
+      legacyIndexLimit,
+    }).forEach((providerKey) => {
+      candidates.add(`${provider}:${providerKey}`);
+    });
   };
 
   addCandidate(readString(config.authIndex));
@@ -295,15 +298,36 @@ const buildProviderAliasDisplayMap = (
   const storedAliases = normalizeProviderAliasItems(providerAliases);
   const map = new Map<string, ProviderAliasDisplayInfo>();
   if (!config || storedAliases.size === 0) return map;
+  const providerAliasCounts = providerAliases.reduce<Record<AliasProviderType, number>>(
+    (counts, entry) => {
+      const provider = readString(entry.provider).toLowerCase();
+      if (
+        provider === 'gemini' ||
+        provider === 'codex' ||
+        provider === 'claude' ||
+        provider === 'vertex' ||
+        provider === 'openai'
+      ) {
+        counts[provider] += 1;
+      }
+      return counts;
+    },
+    { gemini: 0, codex: 0, claude: 0, vertex: 0, openai: 0 }
+  );
+  const legacyIndexLimitFor = (provider: AliasProviderType, configLength: number) =>
+    Math.max(32, configLength + providerAliasCounts[provider] + 1);
 
   const registerDisplay = (
     provider: AliasProviderType,
     configItem: ProviderKeyConfig | OpenAIProviderConfig,
     index: number,
     authIndices: string[],
-    sourceCandidates: string[]
+    sourceCandidates: string[],
+    legacyIndexLimit: number
   ) => {
-    const alias = Array.from(providerAliasKeyCandidates(provider, configItem, index, authIndices))
+    const alias = Array.from(
+      providerAliasKeyCandidates(provider, configItem, index, authIndices, legacyIndexLimit)
+    )
       .map((key) => storedAliases.get(key))
       .find(Boolean);
     if (!alias) return;
@@ -327,14 +351,17 @@ const buildProviderAliasDisplayMap = (
     provider: AliasProviderType,
     configs: ProviderKeyConfig[] | undefined
   ) => {
-    (configs || []).forEach((item, index) => {
+    const items = configs || [];
+    const legacyIndexLimit = legacyIndexLimitFor(provider, items.length);
+    items.forEach((item, index) => {
       const authIndex = normalizeAuthIndex(item.authIndex);
       registerDisplay(
         provider,
         item,
         index,
         authIndex ? [authIndex] : [],
-        Array.from(buildCandidateUsageSourceIds({ apiKey: item.apiKey, prefix: item.prefix }))
+        Array.from(buildCandidateUsageSourceIds({ apiKey: item.apiKey, prefix: item.prefix })),
+        legacyIndexLimit
       );
     });
   };
@@ -344,7 +371,9 @@ const buildProviderAliasDisplayMap = (
   registerApiKeyProvider('codex', config.codexApiKeys);
   registerApiKeyProvider('vertex', config.vertexApiKeys);
 
-  (config.openaiCompatibility || []).forEach((provider, index) => {
+  const openaiProviders = config.openaiCompatibility || [];
+  const openaiLegacyIndexLimit = legacyIndexLimitFor('openai', openaiProviders.length);
+  openaiProviders.forEach((provider, index) => {
     const authIndices = new Set<string>();
     const sourceCandidates = new Set<string>();
     const providerAuthIndex = normalizeAuthIndex(provider.authIndex);
@@ -364,7 +393,8 @@ const buildProviderAliasDisplayMap = (
       provider,
       index,
       Array.from(authIndices),
-      Array.from(sourceCandidates)
+      Array.from(sourceCandidates),
+      openaiLegacyIndexLimit
     );
   });
 
